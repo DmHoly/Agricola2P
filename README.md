@@ -5,7 +5,8 @@ and Small*, Uwe Rosenberg), le jeu de placement d'ouvriers a 2 joueurs centre
 sur l'elevage.
 
 Le detail des regles implementees (et leurs limites/hypotheses par rapport au
-jeu physique) est dans **[RULES.md](RULES.md)**.
+jeu physique) est dans **[RULES.md](RULES.md)**, et un guide strategique tire
+de parties bot vs bot dans **[STRATEGY.md](STRATEGY.md)**.
 
 ## Contenu
 
