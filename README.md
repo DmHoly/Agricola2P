@@ -54,32 +54,55 @@ une presentation d'Agricola: Terre d'Elevage), precisee ensuite en detail sur
 le mecanisme central des clotures/enclos/batiments:
 
 - **Partie en 8 tours**, chaque joueur disposant de **3 ouvriers** (6
-  placements d'ouvrier au total par tour). Une case d'action occupee par un
-  ouvrier devient indisponible a l'autre joueur pour le reste du tour.
-- **3 ressources**: bois, pierre, roseau, qui s'accumulent sur leurs cases du
-  plateau central a chaque debut de tour si personne ne les prend
-  (`rules_data.ACCUMULATING_SPACES`).
-- **4 especes animales** (mouton, cochon, vache, cheval), obtenues via des
-  cases d'accumulation dediees sur le plateau.
+  placements d'ouvrier au total par tour). **1 seul ouvrier par case
+  d'action**: une case occupee devient indisponible a l'autre joueur pour le
+  reste du tour (`state.is_space_free`).
+- **Plateau d'action precis** (17 cases, toutes disponibles des le tour 1,
+  cf `rules_data.ACTION_SPACE_KIND`):
+  - Ressources: Petit Bois (+1 bois/tour), Grand Bois (+2), Petite Pierre
+    (+1 pierre/tour), Grande Pierre (+2), Roseau & Bois (+1 roseau +1 bois
+    /tour) — chacune sa propre case, accumulant si non prise.
+  - 1 case d'accumulation par espece animale (mouton/cochon/vache/cheval,
+    +1/tour chacune).
+  - **Clotures**: 2 cases distinctes — standard (1 bois/segment, illimite)
+    et alternative (2 pierres pour les 2 premiers segments puis 1 pierre/
+    segment supplementaire). Si la standard est prise, l'autre joueur peut
+    toujours cloturer via l'alternative (plus chere). **Deux enclos voisins
+    mutualisent** la barriere qui les separe (payee une seule fois — le
+    moteur retient chaque arete deja cloturee). Les bords de la **maison**
+    et des **batiments** (stalle/etable) font office de **murs naturels
+    gratuits**. Une fois posee, une barriere/auge/batiment n'est plus
+    jamais deplacee.
+  - **Auges**: 2 cases distinctes — standard (la 1re auge de la visite est
+    gratuite, puis 3 bois/auge supplementaire) et alternative (3 pierres/
+    auge, jamais de gratuite). Une seule visite peut poser plusieurs auges
+    a des emplacements differents (le moteur propose soit 1 auge a un
+    emplacement precis, soit toutes les auges possibles en une fois, plutot
+    que d'enumerer tous les sous-ensembles).
+  - **Agrandissement de ferme** (case dediee, 3 pierres + 1 roseau): achete
+    directement 1 tuile d'extension de 3 cases (max 2 tuiles au total).
+  - **Agrandissement ou amelioration** (5 bois OU 5 pierres au choix): au
+    choix, achete 1 tuile d'extension, OU ameliore une Stalle en Etable/
+    Etable ouverte, OU renove la maison en Maison a colombage.
+  - **Batiment special**: 2 cases independantes, jusqu'a 2 batiments
+    speciaux achetes par manche (un par case, cf pool ci-dessous).
+  - **Construction d'une Stalle** (1 case): non listee dans la description
+    fournie par l'utilisateur pour les cases d'action — conservee telle
+    quelle car il faut bien un moyen de batir une premiere Stalle avant de
+    pouvoir la remplacer par une Etable via "agrandissement ou
+    amelioration" (voir limitations plus bas).
+- **4 especes animales** (mouton, cochon, vache, cheval).
 - **Plateau de depart**: grille 3x2 (2 cases maison + 4 cases ouvertes), avec
-  jusqu'a **2 tuiles d'extension** de 3 cases chacune (achetees en
-  ressources).
-- **Clotures**: se posent sur les bordures entre 2 cases (ou le bord du
-  plateau, toujours gratuit) et se paient en bois OU en pierre, 1 ressource
-  par segment. **Deux enclos voisins mutualisent** la barriere qui les
-  separe (payee une seule fois — le moteur retient chaque arete deja
-  cloturee). Les bords de la **maison** et des **batiments** (stalle/etable)
-  font office de **murs naturels gratuits**. Une fois posee, une
-  barriere/auge/batiment n'est plus jamais deplacee.
+  jusqu'a **2 tuiles d'extension** de 3 cases chacune.
 - **Capacite des enclos**: un enclos de N cases loge `N x 2` animaux de base,
   et ce nombre **double par auge** ajoutee (jusqu'a 3 auges -> `N x 16`). Une
   case non cloturee ne loge un animal que si elle est equipee d'une auge (1
   animal). Une **Stalle** (1 case, 3 bois + 1 pierre, 1 PV) loge 4 animaux
-  sans cloture, et peut etre amelioree en **Etable** (5 bois ou 5 pierre, 2
-  PV, 5 animaux) ou **Etable ouverte** (5 bois ou 5 pierre, 2 PV, 4 animaux).
-  Une auge sur un batiment ajoute +1 animal.
-- **Maison a colombage**: renovation de la maison de depart (3 bois + 1
-  pierre, +2 PV en fin de partie, aucune capacite animale).
+  sans cloture, et peut etre amelioree en **Etable** (2 PV, 5 animaux) ou
+  **Etable ouverte** (2 PV, 4 animaux). Une auge sur un batiment ajoute +1
+  animal.
+- **Maison a colombage**: renovation de la maison de depart (+2 PV en fin de
+  partie, aucune capacite animale).
 - **Reproduction**: a la fin de **chaque** tour, tout groupe d'au moins 2
   animaux de la meme espece avec de la place produit 1 bebe supplementaire.
 - **Batiments speciaux**: pool partage distinct (Bergerie, Porcherie, Puits,
@@ -112,18 +135,19 @@ le mecanisme central des clotures/enclos/batiments:
 details, donc des valeurs raisonnables ont ete choisies et sont centralisees
 dans `rules_data.py` pour rester faciles a corriger):
 
-- Les incrementations exactes d'accumulation par tour (bois/pierre/roseau/
-  animaux) sont des choix d'equilibrage.
+- L'incrementation de la case "Roseau & Bois" (+1 roseau ET +1 bois par
+  tour) suit la note "selon la variante" du texte source sans plus de
+  precision.
 - Les enclos sont des **rectangles** (pas de formes libres).
-- Les tuiles d'extension ont une forme/un emplacement/un cout fixes choisis
+- Les tuiles d'extension ont une forme/un emplacement fixes choisis
   arbitrairement (2 tuiles de 3 cases), plutot que le systeme exact du jeu.
 - Le pool de "batiments speciaux" (au-dela de l'Entrepot, donne en exemple)
   utilise des noms/couts/PV generiques plutot que la liste exacte du jeu
   physique.
-- Les animaux places restent **fixes** une fois poses: le moteur ne modelise
-  pas le redeplacement libre des animaux entre emplacements (contrairement
-  aux barrieres/auges/batiments qui sont bien immuables comme dans le vrai
-  jeu, les animaux, eux, peuvent normalement etre redeplaces librement).
+- La construction d'une premiere Stalle (case dediee, 3 bois + 1 pierre)
+  n'apparait pas dans la liste d'actions fournie par l'utilisateur: elle est
+  conservee car le jeu a besoin d'un moyen d'en batir une avant de pouvoir la
+  remplacer par une Etable.
 - Le bot MCTS clone l'etat de jeu (y compris l'accumulation a venir, fixee au
   moment du clone): depuis un etat donne, la partie redevient donc a
   information parfaite, ce qui simplifie l'algorithme (MCTS classique plutot

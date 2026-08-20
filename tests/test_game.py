@@ -24,11 +24,11 @@ def test_turn_order_alternates_and_round_advances():
 
 def test_accumulation_grows_when_space_unused():
     game = AgricolaGame.new_game(seed=3)
-    initial = game.state.accumulators["stone_space"]
+    initial = dict(game.state.accumulators["stone_small"])
     for _ in range(2 * R.WORKERS_PER_PLAYER):
-        actions = [a for a in game.legal_actions() if a.space_id != "stone_space"]
+        actions = [a for a in game.legal_actions() if a.space_id != "stone_small"]
         game.apply(actions[0] if actions else game.legal_actions()[0])
-    assert game.state.accumulators["stone_space"] == initial * 2
+    assert game.state.accumulators["stone_small"] == {k: v * 2 for k, v in initial.items()}
 
 
 def test_random_playthrough_terminates():

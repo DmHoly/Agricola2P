@@ -31,8 +31,8 @@ class PlayerState:
             self.resources[res] = self.resources.get(res, 0) + amount
 
 
-def _initial_accumulators() -> dict[str, int]:
-    return {space_id: 0 for space_id in R.ACCUMULATING_SPACES}
+def _initial_accumulators() -> dict[str, dict]:
+    return {space_id: dict.fromkeys(increments, 0) for space_id, increments in R.ACCUM_SPACES.items()}
 
 
 @dataclass
@@ -45,7 +45,7 @@ class GameState:
     turn_index: int = 0
     reorg_used_this_turn: bool = False  # 1 redeplacement gratuit d'animaux par tour d'ouvrier
     occupied_spaces: dict[str, int] = field(default_factory=dict)
-    accumulators: dict[str, int] = field(default_factory=_initial_accumulators)
+    accumulators: dict[str, dict] = field(default_factory=_initial_accumulators)
     available_buildings: list[SpecialBuilding] = field(default_factory=list)
     finished: bool = False
     final_scores: list[float] | None = None
@@ -73,8 +73,10 @@ class GameState:
         return space_id not in self.occupied_spaces
 
     def accumulate_round(self) -> None:
-        for space_id, (_kind, _target, amount) in R.ACCUMULATING_SPACES.items():
-            self.accumulators[space_id] = self.accumulators.get(space_id, 0) + amount
+        for space_id, increments in R.ACCUM_SPACES.items():
+            bucket = self.accumulators.setdefault(space_id, {})
+            for key, amount in increments.items():
+                bucket[key] = bucket.get(key, 0) + amount
 
 
 def _round_turn_order(starting_player_idx: int) -> list[int]:
