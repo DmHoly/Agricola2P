@@ -1,0 +1,16 @@
+[project]
+name = "agricola2p"
+version = "0.1.0"
+description = "Moteur et bots pour Agricola: Terre d'Elevage (All Creatures Big and Small), jeu 2 joueurs"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agricola2p*"]
