@@ -1,71 +1,58 @@
 """Toutes les valeurs numeriques et tables de regles, regroupees ici.
 
 IMPORTANT (lire le README, section "Fidelite aux regles officielles"):
-Ce module reconstitue de memoire les regles d'Agricola: Terre d'Elevage
-(All Creatures Big and Small, Uwe Rosenberg). La structure du jeu (pas de
-recoltes/faim, 1 seul ouvrier par joueur, 14 manches en 4 stades, especes
-animales, ressources bois/argile/roseau/pierre) est fidele. En revanche les
-valeurs numeriques precises (couts, capacites, bareme de score, texte exact
-des cartes bonus) sont des approximations raisonnables, PAS une retranscription
-verifiee du livret de regles. Tout est centralise ici pour que ce soit trivial
-a corriger: il suffit de changer les valeurs dans ce fichier, aucun autre
-module ne contient de nombre "en dur".
+La structure ci-dessous suit la synthese fournie par l'utilisateur (basee sur
+la video de la chaine Ludovox presentant Agricola: Terre d'Elevage): partie
+en 8 tours, 3 ouvriers par joueur (6 actions/tour), ressources bois/pierre/
+roseau qui s'accumulent sur le plateau central, 4 especes (mouton, cochon,
+vache, cheval), clotures/enclos immuables une fois poses, tuiles d'extension
+pour agrandir la ferme, batiments speciaux (points + capacites), penalite de
+diversite si moins de 3 animaux d'une espece, bonus "exploitation complete".
+
+Les valeurs numeriques precises non donnees dans cette synthese (couts
+exacts, incrementations d'accumulation, forme/emplacement des tuiles
+d'extension, liste des batiments speciaux) restent des approximations
+raisonnables choisies pour donner un jeu jouable et equilibre. Tout est
+centralise ici pour rester facile a corriger si une source plus precise
+(livret officiel) devient disponible: il suffit de changer les valeurs dans
+ce fichier, aucun autre module ne contient de nombre "en dur".
 """
 
 from __future__ import annotations
 
-from .constants import Animal, HouseMaterial, Resource
+from .constants import Animal, Resource
+
+# ---------------------------------------------------------------------------
+# Manches / ouvriers
+# ---------------------------------------------------------------------------
+
+TOTAL_ROUNDS = 8
+WORKERS_PER_PLAYER = 3
 
 # ---------------------------------------------------------------------------
 # Plateau / ferme
 # ---------------------------------------------------------------------------
 
 GRID_ROWS = 4
-GRID_COLS = 3
+GRID_COLS = 4
 
-# Cases occupees par la maison au depart (ligne, colonne), 0-indexe.
 INITIAL_HOUSE_CELLS = [(0, 0), (0, 1)]
+# Cases jouables des le debut de la partie (en plus de la maison).
+INITIAL_OPEN_CELLS = [(0, 2), (0, 3), (1, 0), (1, 1)]
 
 # ---------------------------------------------------------------------------
-# Manches / stades
+# Tuiles d'extension (agrandissement de la ferme)
 # ---------------------------------------------------------------------------
 
-TOTAL_ROUNDS = 14
+EXTENSION_TILES = [
+    {"id": "tile_a", "cells": [(1, 2), (1, 3)], "cost": {Resource.WOOD: 2}},
+    {"id": "tile_b", "cells": [(2, 0), (2, 1)], "cost": {Resource.WOOD: 2, Resource.REED: 1}},
+    {"id": "tile_c", "cells": [(2, 2), (2, 3)], "cost": {Resource.STONE: 1, Resource.WOOD: 1}},
+    {"id": "tile_d", "cells": [(3, 0), (3, 1)], "cost": {Resource.STONE: 2}},
+    {"id": "tile_e", "cells": [(3, 2), (3, 3)], "cost": {Resource.STONE: 2, Resource.REED: 1}},
+]
 
-# Dernier round de chaque stade -> a la fin de ce round: phase de reproduction
-# + reveal des espaces d'action du stade suivant.
-STAGE_END_ROUNDS = [4, 8, 11, 14]
-NUM_STAGES = len(STAGE_END_ROUNDS)
-
-
-def stage_for_round(round_no: int) -> int:
-    """Stade (1-indexe) auquel appartient un round donne (1-indexe)."""
-    for i, end in enumerate(STAGE_END_ROUNDS):
-        if round_no <= end:
-            return i + 1
-    return NUM_STAGES
-
-
-# ---------------------------------------------------------------------------
-# Ressources de depart et actions de recolte de ressources
-# ---------------------------------------------------------------------------
-
-INITIAL_RESOURCES = {
-    Resource.WOOD: 0,
-    Resource.CLAY: 0,
-    Resource.REED: 0,
-    Resource.STONE: 0,
-}
-
-# space_id -> {resource: quantite} gagnee en s'y placant.
-RESOURCE_SPACE_YIELD = {
-    "forest": {Resource.WOOD: 3},
-    "clay_pit": {Resource.CLAY: 3},
-    "reed_bank": {Resource.REED: 2},
-    "quarry": {Resource.STONE: 2},
-    "forest_2": {Resource.WOOD: 2},
-    "clay_pit_2": {Resource.CLAY: 2},
-}
+EXTENSION_COMPLETE_BONUS_PER_TILE = 2
 
 # ---------------------------------------------------------------------------
 # Clotures / etables
@@ -74,117 +61,73 @@ RESOURCE_SPACE_YIELD = {
 FENCE_COST_PER_EDGE = {Resource.WOOD: 1}
 STABLE_COST = {Resource.WOOD: 2}
 
-# Un stable multiplie la capacite d'une case/pature: unites de capacite
-# = taille_pature * (1 + nb_etables_dans_la_pature).
-# Une case non cloturee sans etable ne loge jamais qu'1 animal, quelle que
-# soit l'espece (case "non amenagee").
-ANIMAL_SPACE_FACTOR = {
-    Animal.RABBIT: 2,
-    Animal.SHEEP: 1,
-    Animal.BOAR: 1,
-    Animal.CATTLE: 1,
-}
+# Une etable (batiment qui "abrite des animaux") loge jusqu'a ce nombre
+# d'animaux d'une meme espece sur sa case.
+STABLE_CAPACITY = 2
 
+# Un enclos (pature) sans etable loge 1 animal par case cloturee; chaque
+# etable construite a l'interieur ajoute STABLE_CAPACITY-1 places
+# supplementaires par etable (cf farmyard.Pasture.capacity).
 MAX_ANIMALS_UNFENCED_NO_STABLE = 1
 
 # ---------------------------------------------------------------------------
-# Marches aux animaux
+# Accumulation sur le plateau central
 # ---------------------------------------------------------------------------
+# space_id -> ("resource"|"animal", Resource|Animal, increment ajoute a
+# chaque debut de tour si l'espace n'a pas ete pris)
 
-ANIMAL_MARKET_SPACES = {
-    "rabbit_market": Animal.RABBIT,
-    "sheep_market": Animal.SHEEP,
-    "boar_market": Animal.BOAR,
-    "cattle_market": Animal.CATTLE,
-}
-ANIMAL_MARKET_TAKE = 1
-
-# ---------------------------------------------------------------------------
-# Renovation de la maison
-# ---------------------------------------------------------------------------
-
-RENOVATION_COST = {
-    HouseMaterial.CLAY: {Resource.CLAY: 2, Resource.REED: 1},
-    HouseMaterial.STONE: {Resource.STONE: 3, Resource.REED: 1},
-}
-
-BUILD_ROOM_COST = {
-    HouseMaterial.WOOD: {Resource.WOOD: 5},
-    HouseMaterial.CLAY: {Resource.CLAY: 5},
-    HouseMaterial.STONE: {Resource.STONE: 5},
-}
-
-ROOM_POINTS = {
-    HouseMaterial.WOOD: 1,
-    HouseMaterial.CLAY: 2,
-    HouseMaterial.STONE: 3,
+ACCUMULATING_SPACES: dict[str, tuple[str, object, int]] = {
+    "wood_space": ("resource", Resource.WOOD, 3),
+    "stone_space": ("resource", Resource.STONE, 1),
+    "reed_space": ("resource", Resource.REED, 2),
+    "sheep_source": ("animal", Animal.SHEEP, 1),
+    "boar_source": ("animal", Animal.BOAR, 1),
+    "cattle_source": ("animal", Animal.CATTLE, 1),
+    "horse_source": ("animal", Animal.HORSE, 1),
 }
 
 # ---------------------------------------------------------------------------
-# Chariots
+# Espaces d'action (tous disponibles des le tour 1)
+# kind in {"resource_accum", "animal_accum", "fence", "stable", "extension",
+#          "special_building"}
 # ---------------------------------------------------------------------------
 
-WAGON_COST = {Resource.WOOD: 2, Resource.REED: 1}
-WAGON_POINTS = 2
-MAX_WAGONS = 3
-
-# ---------------------------------------------------------------------------
-# Cartes bonus (pool generique simplifie, cf cards.py)
-# ---------------------------------------------------------------------------
-
-BONUS_CARD_DRAW_SPACES = ["bonus_card", "bonus_card_2"]
-
-# ---------------------------------------------------------------------------
-# Definition des espaces d'action par stade (id -> kind)
-# kind in {"resource", "fence", "stable", "market", "renovate", "build_room",
-#          "wagon", "bonus_card"}
-# ---------------------------------------------------------------------------
-
-ACTION_SPACES_BY_STAGE = {
-    1: [
-        ("forest", "resource"),
-        ("clay_pit", "resource"),
-        ("reed_bank", "resource"),
-        ("fencing", "fence"),
-        ("build_stable", "stable"),
-        ("sheep_market", "market"),
-        ("bonus_card", "bonus_card"),
-    ],
-    2: [
-        ("boar_market", "market"),
-        ("cattle_market", "market"),
-        ("quarry", "resource"),
-        ("renovate", "renovate"),
-    ],
-    3: [
-        ("rabbit_market", "market"),
-        ("forest_2", "resource"),
-        ("build_room", "build_room"),
-        ("wagon", "wagon"),
-    ],
-    4: [
-        ("clay_pit_2", "resource"),
-        ("bonus_card_2", "bonus_card"),
-    ],
+ACTION_SPACE_KIND: dict[str, str] = {
+    "wood_space": "resource_accum",
+    "stone_space": "resource_accum",
+    "reed_space": "resource_accum",
+    "sheep_source": "animal_accum",
+    "boar_source": "animal_accum",
+    "cattle_source": "animal_accum",
+    "horse_source": "animal_accum",
+    "fencing": "fence",
+    "build_stable": "stable",
+    "extension": "extension",
+    "special_building": "special_building",
 }
+
+ALL_ACTION_SPACES = list(ACTION_SPACE_KIND.keys())
+
+# ---------------------------------------------------------------------------
+# Batiments speciaux (pool partage, achete puis retire du pool)
+# ---------------------------------------------------------------------------
+
+SPECIAL_BUILDINGS = [
+    {"name": "Bergerie", "cost": {Resource.WOOD: 2}, "points": 2, "resource_bonus": {}},
+    {"name": "Porcherie", "cost": {Resource.WOOD: 2, Resource.REED: 1}, "points": 2, "resource_bonus": {}},
+    {"name": "Etable a vaches", "cost": {Resource.STONE: 1, Resource.WOOD: 1}, "points": 3, "resource_bonus": {}},
+    {"name": "Ecurie", "cost": {Resource.STONE: 1, Resource.REED: 1}, "points": 3, "resource_bonus": {}},
+    {"name": "Grange", "cost": {Resource.WOOD: 3}, "points": 2, "resource_bonus": {Resource.WOOD: 1}},
+    {"name": "Puits", "cost": {Resource.REED: 2}, "points": 2, "resource_bonus": {Resource.REED: 1}},
+    {"name": "Carriere privee", "cost": {Resource.STONE: 2}, "points": 3, "resource_bonus": {Resource.STONE: 1}},
+]
 
 # ---------------------------------------------------------------------------
 # Score final
 # ---------------------------------------------------------------------------
 
-# Bareme par espece: index = nombre d'animaux possede (cappe au dernier
-# indice), valeur = points. -1 si 0 animal (case "vide" penalisee comme en
-# Agricola classique).
-ANIMAL_SCORE_TABLE = {
-    Animal.RABBIT: [-1, 1, 1, 2, 2, 3, 3, 4],
-    Animal.SHEEP: [-1, 1, 2, 2, 3, 3, 4, 4],
-    Animal.BOAR: [-1, 1, 2, 3, 3, 4, 4, 5],
-    Animal.CATTLE: [-1, 1, 2, 3, 4, 4, 5, 5],
-}
-
-PASTURE_POINTS = 1
-STABLE_POINTS = 1
-EMPTY_SPACE_PENALTY = -1
-
-# points par ressource inutilisee en fin de partie (souvent 0 dans Agricola)
-LEFTOVER_RESOURCE_POINTS = 0
+# Meme bareme pour les 4 especes (index = nombre d'animaux, cappe au dernier
+# indice). Moins de 3 animaux d'une espece penalise (valeurs <= -1), 3+
+# rapporte des points croissants ("palier").
+ANIMAL_SCORE_TABLE = [-2, -1, -1, 2, 3, 4, 5]
+ANIMAL_DIVERSITY_THRESHOLD = 3

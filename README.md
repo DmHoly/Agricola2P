@@ -47,50 +47,70 @@ while not game.is_terminal():
 print(game.scores())
 ```
 
-## Fidelite aux regles officielles — a lire avant de juger la "force" des bots
+## Fidelite aux regles officielles
 
-Ce depot **n'est pas** une retranscription exacte et verifiee du livret de
-regles officiel. La structure generale du jeu est fidele:
+Le ruleset implemente suit la synthese fournie (basee sur la presentation
+video d'Agricola: Terre d'Elevage par la chaine Ludovox):
 
-- 2 joueurs, 1 seul ouvrier chacun, pas de phase de recolte/faim (contrairement
-  a l'Agricola classique) — le jeu tourne autour de la construction et de
-  l'elevage.
-- 14 manches decoupees en 4 stades (fins de stade aux manches 4, 8, 11, 14),
-  avec deverrouillage progressif de nouveaux espaces d'action et une phase de
-  reproduction des animaux a chaque fin de stade.
-- 4 especes animales (lapin, mouton, sanglier, vache), 4 ressources
-  (bois, argile, roseau, pierre), clotures/patures, etables, renovation de la
-  maison, chariots, cartes bonus.
+- **Partie en 8 tours**, chaque joueur disposant de **3 ouvriers** (6
+  placements d'ouvrier au total par tour). Une case d'action occupee par un
+  ouvrier devient indisponible a l'autre joueur pour le reste du tour.
+- **3 ressources**: bois, pierre, roseau. Elles s'accumulent sur leurs cases
+  du plateau central a chaque debut de tour si personne ne les prend
+  (`rules_data.ACCUMULATING_SPACES`); prendre la case donne tout ce qui s'y
+  est accumule et la remet a zero.
+- **4 especes animales**: mouton, cochon, vache, cheval. Elles proviennent
+  elles aussi de cases d'accumulation dediees sur le plateau (pas d'achat
+  contre ressources).
+- **Enclos/clotures**: un enclos pose (rectangle de cases cloturees) ne peut
+  plus etre deplace ni modifie ensuite. Un animal seul peut occuper une case
+  non cloturee (1 max); un enclos loge plusieurs animaux de la meme espece;
+  une etable (batiment construit sur une case) abrite aussi des animaux et en
+  augmente la capacite.
+- **Reproduction**: a la fin de **chaque** tour, tout groupe d'au moins 2
+  animaux de la meme espece avec de la place produit 1 bebe supplementaire.
+- **Agrandissement**: la ferme grandit exclusivement via l'achat de tuiles
+  d'extension (`rules_data.EXTENSION_TILES`), payees en ressources.
+- **Batiments speciaux**: construits contre ressources, rapportent des points
+  de victoire directs et parfois un petit bonus immediat.
+- **Score final**: total par espece selon un bareme unique
+  (`rules_data.ANIMAL_SCORE_TABLE`) qui penalise avoir **moins de 3** animaux
+  d'une espece et recompense les paliers superieurs, + points des batiments
+  speciaux construits, + bonus "exploitation complete" par tuile d'extension
+  entierement amenagee (aucune case libre dessus) en fin de partie.
 
-En revanche, **les valeurs numeriques precises** (couts exacts, capacites de
-patures par espece, bareme de score final, texte et effets exacts des
-dizaines de cartes bonus/ameliorations du jeu physique) sont des
-approximations raisonnables reconstruites de memoire, pas une source de
-verite. Simplifications assumees notables:
+**Ce qui reste une approximation** (la synthese fournie ne donne pas ces
+details, donc des valeurs raisonnables ont ete choisies et sont centralisees
+dans `rules_data.py` pour rester faciles a corriger):
 
-- Les patures sont des **rectangles** (pas de formes quelconques).
-- Les cartes bonus utilisent un **pool generique** de ~10 cartes a effet
-  immediat (ressources ou points) plutot que les dizaines de cartes uniques
-  du jeu reel (`agricola2p/engine/cards.py`).
-- Le bot MCTS clone l'etat de jeu (y compris l'ordre restant de la pioche de
-  cartes bonus, fixe au moment du clone) : depuis un etat donne, la partie
-  redevient donc a information parfaite, ce qui simplifie l'algorithme
-  (MCTS classique plutot qu'un MCTS a information imparfaite/ISMCTS) au prix
-  d'un leger avantage "omniscient" sur l'ordre des cartes a venir.
+- Les incrementations exactes d'accumulation par tour (bois/pierre/roseau/
+  animaux), les couts de cloture/etable/tuiles/batiments, et le bareme de
+  score precis sont des choix d'equilibrage, pas une retranscription du
+  livret officiel.
+- Les enclos sont des **rectangles** (pas de formes libres).
+- Les tuiles d'extension ont une forme, un emplacement et un cout fixes
+  choisis arbitrairement (5 tuiles de 2 cases), plutot que le systeme exact
+  du jeu (ordre d'achat, formes variees, etc.).
+- Les "batiments speciaux" utilisent un **pool generique** de 7 batiments a
+  cout/points/bonus simples, plutot que la liste exacte et les capacites
+  particulieres du jeu physique.
+- Le bot MCTS clone l'etat de jeu (y compris l'accumulation a venir, fixee au
+  moment du clone): depuis un etat donne, la partie redevient donc a
+  information parfaite, ce qui simplifie l'algorithme (MCTS classique plutot
+  qu'un MCTS a information imparfaite/ISMCTS).
 
 **Tout est centralise dans `agricola2p/engine/rules_data.py`** precisement
-pour que ce soit facile a corriger: si tu as le livret de regles sous la
-main, il suffit d'ajuster les constantes/tables de ce fichier (couts,
-capacites, bareme de score, plateau des manches/stades) — aucun autre module
-ne contient de valeur numerique "en dur". Le reste du moteur (`farmyard.py`,
-`actions.py`, `game.py`) est ecrit pour rester correct quelles que soient ces
-valeurs.
+pour que ce soit facile a corriger: si une source plus precise (livret de
+regles) est disponible, il suffit d'ajuster les constantes/tables de ce
+fichier — aucun autre module ne contient de valeur numerique "en dur". Le
+reste du moteur (`farmyard.py`, `actions.py`, `game.py`) reste correct quelles
+que soient ces valeurs.
 
 ## Prochaines etapes possibles
 
-- Remplacer le pool generique de cartes bonus par la vraie liste de cartes du
-  jeu (texte + effet exact).
-- Autoriser des formes de pature non rectangulaires (clotures libres).
+- Remplacer le pool generique de batiments speciaux et les tuiles
+  d'extension par les vraies listes du jeu (texte + effet exact + formes).
+- Autoriser des formes d'enclos non rectangulaires (clotures libres).
 - Ajouter un bot par apprentissage par renforcement (self-play, type
   AlphaZero simplifie) une fois le moteur valide/ajuste par rapport au jeu
   physique — le `MCTSBot` actuel peut deja servir de generateur de parties

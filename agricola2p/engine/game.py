@@ -1,10 +1,10 @@
-"""Boucle de jeu complete: tours, manches, stades, reproduction, score final."""
+"""Boucle de jeu complete: tours (6 placements), reproduction, score final."""
 
 from __future__ import annotations
 
 from . import rules_data as R
 from .actions import Action, apply_action, legal_actions
-from .state import GameState, PlayerState
+from .state import GameState, PlayerState, _round_turn_order
 
 
 def score_player(player: PlayerState) -> int:
@@ -12,18 +12,16 @@ def score_player(player: PlayerState) -> int:
     total = 0
 
     animals = fy.total_animals()
-    for species, count in animals.items():
-        table = R.ANIMAL_SCORE_TABLE[species]
+    table = R.ANIMAL_SCORE_TABLE
+    for count in animals.values():
         idx = min(count, len(table) - 1)
         total += table[idx]
 
-    total += len(fy.pastures) * R.PASTURE_POINTS
-    num_stables = sum(p.stables for p in fy.pastures.values()) + len(fy.stable_cells)
-    total += num_stables * R.STABLE_POINTS
-    total += len(fy.house_cells) * R.ROOM_POINTS[fy.house_material]
-    total += fy.wagons * R.WAGON_POINTS
-    total += fy.empty_cells_count() * R.EMPTY_SPACE_PENALTY
-    total += player.bonus_points
+    total += sum(b.points for b in player.buildings)
+
+    for tile in R.EXTENSION_TILES:
+        if tile["id"] in fy.owned_tiles and fy.tile_fully_used(tile["cells"]):
+            total += R.EXTENSION_COMPLETE_BONUS_PER_TILE
 
     return total
 
@@ -56,7 +54,6 @@ class AgricolaGame:
             raise RuntimeError("La partie est terminee")
         player_idx = self.state.active_player_idx
         apply_action(self.state, player_idx, action)
-        self.state.moves_this_round += 1
         self._advance_turn()
 
     def scores(self) -> list[int]:
@@ -72,20 +69,14 @@ class AgricolaGame:
     # -- interne ----------------------------------------------------
     def _advance_turn(self) -> None:
         state = self.state
-        if state.moves_this_round < len(state.players):
-            state.active_player_idx = state.opponent_idx(state.active_player_idx)
+        state.turn_index += 1
+        if state.turn_index < len(state.turn_order):
             return
 
-        # les deux joueurs ont joue: fin de manche
+        # les 6 placements du tour ont eu lieu: fin de manche
         state.occupied_spaces = {}
-        state.moves_this_round = 0
-
-        if state.round_no in R.STAGE_END_ROUNDS:
-            for player in state.players:
-                player.farmyard.breed()
-            if state.stage < R.NUM_STAGES:
-                state.stage += 1
-                state.unlock_stage_spaces(state.stage)
+        for player in state.players:
+            player.farmyard.breed()
 
         state.round_no += 1
         if state.round_no > R.TOTAL_ROUNDS:
@@ -94,4 +85,6 @@ class AgricolaGame:
             return
 
         state.starting_player_idx = state.opponent_idx(state.starting_player_idx)
-        state.active_player_idx = state.starting_player_idx
+        state.turn_order = _round_turn_order(state.starting_player_idx)
+        state.turn_index = 0
+        state.accumulate_round()

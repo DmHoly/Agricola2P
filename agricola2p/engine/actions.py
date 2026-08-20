@@ -1,8 +1,7 @@
 """Definition des actions possibles et generation des coups legaux.
 
 Un `Action` represente un coup complet et concret (espace choisi + parametres
-comme la case, le rectangle de pature, le materiau de renovation...). C'est
-ce qu'un bot manipule.
+comme la case, le rectangle d'enclos, la tuile ou le batiment choisi...).
 """
 
 from __future__ import annotations
@@ -11,15 +10,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import rules_data as R
-from .constants import Animal, HouseMaterial
-from .farmyard import Cell, FarmyardError
+from .constants import Animal
+from .farmyard import FarmyardError
 from .state import GameState, PlayerState
-
-SPACE_KIND: dict[str, str] = {
-    space_id: kind
-    for spaces in R.ACTION_SPACES_BY_STAGE.values()
-    for space_id, kind in spaces
-}
 
 
 @dataclass(frozen=True)
@@ -45,7 +38,7 @@ def _fence_actions(player: PlayerState) -> list[Action]:
                     if not fy.can_build_pasture(r1, c1, r2, c2):
                         continue
                     cost = fy.fence_cost_for_rectangle(r1, c1, r2, c2)
-                    if player.resources.get(R.Resource.WOOD, 0) >= cost and cost > 0:
+                    if cost > 0 and player.resources.get(R.Resource.WOOD, 0) >= cost:
                         actions.append(Action("fencing", "fence", {"rect": (r1, c1, r2, c2)}))
     return actions
 
@@ -55,84 +48,64 @@ def _stable_actions(player: PlayerState) -> list[Action]:
     if not player.can_afford(R.STABLE_COST):
         return []
     out = []
-    for cell in fy.all_cells():
-        if fy.is_house(cell):
-            continue
+    for cell in fy.playable_cells():
         if fy.can_build_stable(cell):
             out.append(Action("build_stable", "stable", {"cell": cell}))
     return out
 
 
-def _market_actions(space_id: str, player: PlayerState) -> list[Action]:
-    species = R.ANIMAL_MARKET_SPACES[space_id]
+def _animal_accum_actions(space_id: str, state: GameState, player: PlayerState) -> list[Action]:
+    _kind, species, _amount = R.ACCUMULATING_SPACES[space_id]
+    if state.accumulators.get(space_id, 0) <= 0:
+        return []
     fy = player.farmyard
     out = []
     for kind, ref, sp, free in fy.available_capacity():
         if sp != species or free <= 0:
             continue
-        out.append(Action(space_id, "market", {"species": species, "target_kind": kind, "target_ref": ref}))
+        out.append(Action(space_id, "animal_accum", {"species": species, "target_kind": kind, "target_ref": ref}))
     return out
 
 
-def _renovate_actions(player: PlayerState) -> list[Action]:
+def _extension_actions(player: PlayerState) -> list[Action]:
     fy = player.farmyard
-    nxt = fy.house_material.next
-    if nxt is None:
-        return []
-    cost = R.RENOVATION_COST.get(nxt)
-    if cost is None or not player.can_afford(cost):
-        return []
-    return [Action("renovate", "renovate", {"material": nxt.value})]
-
-
-def _build_room_actions(player: PlayerState) -> list[Action]:
-    fy = player.farmyard
-    cost = R.BUILD_ROOM_COST.get(fy.house_material)
-    if cost is None or not player.can_afford(cost):
-        return []
     out = []
-    for cell in fy.free_cells():
-        adjacent = any(
-            (cell[0] + dr, cell[1] + dc) in fy.house_cells
-            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1))
-        )
-        if adjacent:
-            out.append(Action("build_room", "build_room", {"cell": cell}))
+    for tile in R.EXTENSION_TILES:
+        if tile["id"] in fy.owned_tiles:
+            continue
+        if player.can_afford(tile["cost"]):
+            out.append(Action("extension", "extension", {"tile_id": tile["id"]}))
     return out
 
 
-def _wagon_actions(player: PlayerState) -> list[Action]:
-    fy = player.farmyard
-    if fy.wagons >= R.MAX_WAGONS:
-        return []
-    if not player.can_afford(R.WAGON_COST):
-        return []
-    return [Action("wagon", "wagon", {})]
+def _special_building_actions(state: GameState, player: PlayerState) -> list[Action]:
+    out = []
+    for building in state.available_buildings:
+        if player.can_afford(building.cost):
+            out.append(Action("special_building", "special_building", {"building_name": building.name}))
+    return out
 
 
 def legal_actions(state: GameState, player_idx: int) -> list[Action]:
     player = state.players[player_idx]
     out: list[Action] = []
-    for space_id in state.unlocked_spaces:
+    for space_id in R.ALL_ACTION_SPACES:
         if not state.is_space_free(space_id):
             continue
-        kind = SPACE_KIND[space_id]
-        if kind == "resource":
-            out.append(Action(space_id, kind, {}))
+        kind = R.ACTION_SPACE_KIND[space_id]
+        if kind == "resource_accum":
+            if state.accumulators.get(space_id, 0) > 0:
+                out.append(Action(space_id, kind, {}))
+        elif kind == "animal_accum":
+            out.extend(_animal_accum_actions(space_id, state, player))
         elif kind == "fence":
             out.extend(_fence_actions(player))
         elif kind == "stable":
             out.extend(_stable_actions(player))
-        elif kind == "market":
-            out.extend(_market_actions(space_id, player))
-        elif kind == "renovate":
-            out.extend(_renovate_actions(player))
-        elif kind == "build_room":
-            out.extend(_build_room_actions(player))
-        elif kind == "wagon":
-            out.extend(_wagon_actions(player))
-        elif kind == "bonus_card":
-            out.append(Action(space_id, kind, {}))
+        elif kind == "extension":
+            out.extend(_extension_actions(player))
+        elif kind == "special_building":
+            out.extend(_special_building_actions(state, player))
     if not out:
         out.append(PASS)
     return out
@@ -145,13 +118,25 @@ def apply_action(state: GameState, player_idx: int, action: Action) -> None:
     if action.kind == "pass":
         return
 
-    if action.space_id in state.occupied_spaces or (
-        action.space_id != "pass" and action.space_id not in state.unlocked_spaces
-    ):
+    if action.space_id not in R.ALL_ACTION_SPACES or action.space_id in state.occupied_spaces:
         raise FarmyardError(f"Espace {action.space_id} indisponible")
 
-    if action.kind == "resource":
-        player.gain(R.RESOURCE_SPACE_YIELD[action.space_id])
+    if action.kind == "resource_accum":
+        _kind, resource, _amount = R.ACCUMULATING_SPACES[action.space_id]
+        gained = state.accumulators.get(action.space_id, 0)
+        player.gain({resource: gained})
+        state.accumulators[action.space_id] = 0
+
+    elif action.kind == "animal_accum":
+        species = Animal(action.payload["species"])
+        target_kind = action.payload["target_kind"]
+        target_ref = action.payload["target_ref"]
+        available = state.accumulators.get(action.space_id, 0)
+        if target_kind == "pasture":
+            taken = fy.add_animals_to_pasture(target_ref, species, available)
+        else:
+            taken = fy.add_animals_to_cell(tuple(target_ref), species, available)
+        state.accumulators[action.space_id] = max(0, available - taken)
 
     elif action.kind == "fence":
         r1, c1, r2, c2 = action.payload["rect"]
@@ -163,35 +148,20 @@ def apply_action(state: GameState, player_idx: int, action: Action) -> None:
         player.pay(R.STABLE_COST)
         fy.build_stable(tuple(action.payload["cell"]))
 
-    elif action.kind == "market":
-        species = Animal(action.payload["species"])
-        target_kind = action.payload["target_kind"]
-        target_ref = action.payload["target_ref"]
-        if target_kind == "pasture":
-            fy.add_animals_to_pasture(target_ref, species, R.ANIMAL_MARKET_TAKE)
-        else:
-            fy.add_animals_to_cell(tuple(target_ref), species, R.ANIMAL_MARKET_TAKE)
+    elif action.kind == "extension":
+        tile_id = action.payload["tile_id"]
+        tile = next(t for t in R.EXTENSION_TILES if t["id"] == tile_id)
+        player.pay(tile["cost"])
+        fy.buy_tile(tile_id, tile["cells"])
 
-    elif action.kind == "renovate":
-        material = HouseMaterial(action.payload["material"])
-        player.pay(R.RENOVATION_COST[material])
-        fy.renovate(material)
-
-    elif action.kind == "build_room":
-        cell = tuple(action.payload["cell"])
-        player.pay(R.BUILD_ROOM_COST[fy.house_material])
-        fy.add_room(cell)
-
-    elif action.kind == "wagon":
-        player.pay(R.WAGON_COST)
-        fy.wagons += 1
-
-    elif action.kind == "bonus_card":
-        if state.deck:
-            card = state.deck.pop()
-            player.gain(card.resource_gain)
-            player.bonus_points += card.points
-            state.discard.append(card)
+    elif action.kind == "special_building":
+        name = action.payload["building_name"]
+        building = next(b for b in state.available_buildings if b.name == name)
+        player.pay(building.cost)
+        player.buildings.append(building)
+        state.available_buildings.remove(building)
+        if building.resource_bonus:
+            player.gain(building.resource_bonus)
 
     else:  # pragma: no cover - garde-fou
         raise ValueError(f"Type d'action inconnu: {action.kind}")
