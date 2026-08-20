@@ -43,6 +43,7 @@ class GameState:
     first_mover_idx: int = 0  # qui a commence la toute premiere manche (regle d'egalite)
     turn_order: list[int] = field(default_factory=list)
     turn_index: int = 0
+    reorg_used_this_turn: bool = False  # 1 redeplacement gratuit d'animaux par tour d'ouvrier
     occupied_spaces: dict[str, int] = field(default_factory=dict)
     accumulators: dict[str, int] = field(default_factory=_initial_accumulators)
     available_buildings: list[SpecialBuilding] = field(default_factory=list)

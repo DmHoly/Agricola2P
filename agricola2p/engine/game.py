@@ -59,7 +59,10 @@ class AgricolaGame:
             raise RuntimeError("La partie est terminee")
         player_idx = self.state.active_player_idx
         apply_action(self.state, player_idx, action)
-        self._advance_turn()
+        if action.kind != "reorganize":
+            # le redeplacement libre d'animaux ne consomme pas le tour de
+            # l'ouvrier: le meme joueur continue avec sa vraie action.
+            self._advance_turn()
 
     def scores(self) -> list[float]:
         return [score_player(p) for p in self.state.players]
@@ -76,6 +79,7 @@ class AgricolaGame:
     # -- interne ----------------------------------------------------
     def _advance_turn(self) -> None:
         state = self.state
+        state.reorg_used_this_turn = False  # nouveau tour d'ouvrier: redeplacement gratuit dispo a nouveau
         state.turn_index += 1
         if state.turn_index < len(state.turn_order):
             return

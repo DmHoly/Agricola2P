@@ -94,6 +94,19 @@ le mecanisme central des clotures/enclos/batiments:
   ses 3 cases) en fin de partie.
 - **Egalite**: en cas de score final egal, le joueur qui n'a **pas** commence
   la toute premiere manche l'emporte.
+- **Redeplacement des animaux**: les barrieres, auges et batiments sont fixes
+  une fois poses (jamais deplaces), mais les **animaux** peuvent etre
+  redispatches librement entre 2 emplacements deja construits (enclos,
+  batiment ou case a auge) de sa propre ferme, en respectant toujours la
+  regle d'**une seule espece par emplacement**. C'est une action gratuite
+  (`kind="reorganize"`): elle n'occupe pas de case du plateau central et ne
+  consomme pas le tour de l'ouvrier — le meme joueur peut donc reorganiser
+  puis jouer normalement dans la foulee. Limitee a 1 redeplacement par tour
+  d'ouvrier (donc jusqu'a 3 par manche et par joueur) pour rester bornee: le
+  texte source dit "librement" sans preciser de frequence, et une limite
+  explicite evite un espace de recherche illimite pour les bots tout en
+  restant tres permissive en pratique (`agricola2p/engine/farmyard.py:
+  move_animals`, `agricola2p/engine/actions.py: _reorganize_actions`).
 
 **Ce qui reste une approximation** (la synthese fournie ne donne pas ces
 details, donc des valeurs raisonnables ont ete choisies et sont centralisees

@@ -134,6 +134,41 @@ def _special_building_actions(state: GameState, player: PlayerState) -> list[Act
     return out
 
 
+def _reorganize_actions(state: GameState, player: PlayerState) -> list[Action]:
+    """Redeplacement libre d'animaux entre 2 emplacements deja construits
+    (enclos/batiment/case a auge), en respectant 1 seule espece par
+    emplacement. Ne consomme pas d'ouvrier ni d'espace du plateau: limite a
+    1 par tour d'ouvrier (cf state.reorg_used_this_turn) pour rester borne.
+    """
+    if state.reorg_used_this_turn:
+        return []
+    fy = player.farmyard
+    sources = fy.occupied_locations()
+    destinations = fy.available_capacity()
+    out = []
+    for from_kind, from_ref, species, count in sources:
+        for to_kind, to_ref, dst_species, free in destinations:
+            if dst_species != species or (from_kind, from_ref) == (to_kind, to_ref):
+                continue
+            n = min(count, free)
+            if n > 0:
+                out.append(
+                    Action(
+                        "reorganize",
+                        "reorganize",
+                        {
+                            "from_kind": from_kind,
+                            "from_ref": from_ref,
+                            "to_kind": to_kind,
+                            "to_ref": to_ref,
+                            "species": species,
+                            "count": n,
+                        },
+                    )
+                )
+    return out
+
+
 def legal_actions(state: GameState, player_idx: int) -> list[Action]:
     player = state.players[player_idx]
     out: list[Action] = []
@@ -160,6 +195,7 @@ def legal_actions(state: GameState, player_idx: int) -> list[Action]:
             out.extend(_extension_actions(player))
         elif kind == "special_building":
             out.extend(_special_building_actions(state, player))
+    out.extend(_reorganize_actions(state, player))
     if not out:
         out.append(PASS)
     return out
@@ -170,6 +206,18 @@ def apply_action(state: GameState, player_idx: int, action: Action) -> None:
     fy = player.farmyard
 
     if action.kind == "pass":
+        return
+
+    if action.kind == "reorganize":
+        fy.move_animals(
+            action.payload["from_kind"],
+            action.payload["from_ref"],
+            action.payload["to_kind"],
+            action.payload["to_ref"],
+            Animal(action.payload["species"]),
+            action.payload["count"],
+        )
+        state.reorg_used_this_turn = True
         return
 
     if action.space_id not in R.ALL_ACTION_SPACES or action.space_id in state.occupied_spaces:

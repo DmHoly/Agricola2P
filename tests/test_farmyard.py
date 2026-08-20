@@ -147,3 +147,38 @@ def test_tile_fully_used():
     fy.build_trough_on_yard((2, 1))
     fy.build_pasture(2, 2, 2, 2)
     assert fy.tile_fully_used([(2, 0), (2, 1), (2, 2)])
+
+
+def test_move_animals_between_pastures_respects_single_species():
+    fy = Farmyard()
+    fy.buy_tile("tile_a", [(2, 0), (2, 1), (2, 2)])
+    pasture_a = fy.build_pasture(1, 0, 1, 1)  # capacite 4
+    pasture_b = fy.build_pasture(2, 0, 2, 1)  # capacite 4
+    fy.add_animals_to_pasture(pasture_a.pasture_id, Animal.SHEEP, 3)
+    fy.add_animals_to_pasture(pasture_b.pasture_id, Animal.HORSE, 2)
+
+    # une pature occupee par une autre espece refuse le deplacement
+    assert not fy.can_move_animals("pasture", pasture_a.pasture_id, "pasture", pasture_b.pasture_id, Animal.SHEEP, 1)
+    with pytest.raises(FarmyardError):
+        fy.move_animals("pasture", pasture_a.pasture_id, "pasture", pasture_b.pasture_id, Animal.SHEEP, 1)
+
+    # vider completement pasture_b puis y deplacer des moutons devient possible
+    fy.build_building((1, 2))
+    fy.move_animals("pasture", pasture_b.pasture_id, "cell", (1, 2), Animal.HORSE, 2)
+    assert fy.pastures[pasture_b.pasture_id].animal is None
+    fy.move_animals("pasture", pasture_a.pasture_id, "pasture", pasture_b.pasture_id, Animal.SHEEP, 3)
+    assert fy.pastures[pasture_a.pasture_id].count == 0
+    assert fy.pastures[pasture_a.pasture_id].animal is None
+    assert fy.pastures[pasture_b.pasture_id].count == 3
+    assert fy.pastures[pasture_b.pasture_id].animal == Animal.SHEEP
+
+
+def test_move_animals_does_not_exceed_destination_capacity():
+    fy = Farmyard()
+    pasture = fy.build_pasture(1, 0, 1, 1)  # capacite 4
+    fy.build_trough_on_yard((0, 2))  # capacite 1
+    fy.add_animals_to_pasture(pasture.pasture_id, Animal.CATTLE, 4)
+    assert not fy.can_move_animals("pasture", pasture.pasture_id, "cell", (0, 2), Animal.CATTLE, 4)
+    fy.move_animals("pasture", pasture.pasture_id, "cell", (0, 2), Animal.CATTLE, 1)
+    assert fy.animal_cells[(0, 2)] == (Animal.CATTLE, 1)
+    assert fy.pastures[pasture.pasture_id].count == 3

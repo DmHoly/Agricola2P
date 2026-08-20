@@ -275,6 +275,69 @@ class Farmyard:
         self.animal_cells[cell] = (species, existing_n + added)
         return added
 
+    def occupied_locations(self) -> list[tuple[str, Cell | int, Animal, int]]:
+        """Emplacements abritant actuellement des animaux: (kind, ref, espece, nombre)."""
+        out: list[tuple[str, Cell | int, Animal, int]] = []
+        for pasture in self.pastures.values():
+            if pasture.animal is not None and pasture.count > 0:
+                out.append(("pasture", pasture.pasture_id, pasture.animal, pasture.count))
+        for cell, (species, n) in self.animal_cells.items():
+            if n > 0:
+                out.append(("cell", cell, species, n))
+        return out
+
+    def _location_species_count(self, kind: str, ref: Cell | int) -> tuple[Animal | None, int]:
+        if kind == "pasture":
+            pasture = self.pastures[ref]
+            return pasture.animal, pasture.count
+        return self.animal_cells.get(ref, (None, 0))
+
+    def _location_capacity(self, kind: str, ref: Cell | int) -> int:
+        if kind == "pasture":
+            return self.pastures[ref].capacity()
+        return self.cell_capacity(ref)
+
+    def can_move_animals(
+        self, from_kind: str, from_ref: Cell | int, to_kind: str, to_ref: Cell | int, species: Animal, n: int
+    ) -> bool:
+        if n <= 0 or (from_kind, from_ref) == (to_kind, to_ref):
+            return False
+        src_species, src_count = self._location_species_count(from_kind, from_ref)
+        if src_species != species or src_count < n:
+            return False
+        dst_species, dst_count = self._location_species_count(to_kind, to_ref)
+        if dst_count > 0 and dst_species != species:
+            return False  # un enclos/batiment ne loge qu'une seule espece a la fois
+        return dst_count + n <= self._location_capacity(to_kind, to_ref)
+
+    def move_animals(
+        self, from_kind: str, from_ref: Cell | int, to_kind: str, to_ref: Cell | int, species: Animal, n: int
+    ) -> None:
+        """Redeplace librement des animaux entre 2 emplacements DEJA construits
+        (enclos/batiment/case a auge). Les enclos, barrieres et batiments
+        eux-memes restent fixes: seul le contenu (les animaux) bouge, et
+        toujours en respectant la regle d'une seule espece par emplacement.
+        """
+        if not self.can_move_animals(from_kind, from_ref, to_kind, to_ref, species, n):
+            raise FarmyardError("Deplacement d'animaux invalide")
+
+        if from_kind == "pasture":
+            pasture = self.pastures[from_ref]
+            pasture.count -= n
+            if pasture.count == 0:
+                pasture.animal = None
+        else:
+            remaining = self.animal_cells[from_ref][1] - n
+            if remaining == 0:
+                del self.animal_cells[from_ref]
+            else:
+                self.animal_cells[from_ref] = (species, remaining)
+
+        if to_kind == "pasture":
+            self.add_animals_to_pasture(to_ref, species, n)
+        else:
+            self.add_animals_to_cell(to_ref, species, n)
+
     def available_capacity(self) -> list[tuple[str, Cell | int, Animal, int]]:
         """Liste des emplacements avec de la place: (kind, ref, espece_ou_None, place_libre).
 
