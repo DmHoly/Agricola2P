@@ -91,6 +91,61 @@ Score final: **P1 37 — P2 39**. Detail:
    avant la reproduction peut debloquer un palier de score sans depenser de
    ressources.
 
+## Score maximum theorique (sans opposition)
+
+En simulant un environnement "solo" (l'adversaire prend toujours un coup
+different du notre, donc aucune contention: on dispose exactement de nos 24
+actions normales sur 8 manches, sans jamais etre bloque), la recherche du
+meilleur score atteignable donne des enseignements complementaires:
+
+- Un **MCTS solo a 600 iterations/coup** atteint **58,5 PV** avec une
+  configuration a priori contre-intuitive: seulement 2 especes developpees
+  (11 cochons, 14 chevaux — mouton et vache laisses a 0-1, donc en malus),
+  mais **3 batiments speciaux achetes et surtout des ressources
+  deliberement non depensees** (37 en fin de partie) pour maximiser le bonus
+  de l'Entrepot (+0,5 PV/ressource restante = +18,5 PV a lui seul, la plus
+  grosse ligne du score). Un plan construit a la main avec une logique
+  "developper les 4 especes a fond" ne depassait que 49 PV — la difference
+  vient entierement de cet arbitrage entre elevage et thesaurisation.
+- Ce chiffre (58,5) n'est probablement pas le maximum absolu (mouton et
+  vache restent en malus -3 chacun; les corriger a moindre cout semble
+  possible avec les ressources non depensees) mais c'est un score
+  rigoureusement verifie par le moteur, pas une estimation theorique.
+- **2 mecaniques sont determinantes** pour cette optimisation, toutes deux
+  deja bien implementees dans le moteur (verifie dans `farmyard.py:breed`
+  et `rules_data.ACCUM_SPACES`):
+  1. La reproduction gratuite en fin de manche (`breed()`) exige de la place
+     libre — un groupe reproducteur (>=2 animaux) deja a pleine capacite
+     perd sa tete gratuite.
+  2. Chaque espece a son propre "taux de respawn" sur le plateau (+1/manche
+     si personne ne la prend) qui s'accumule gratuitement — attendre pour
+     recolter un gros tas ne coute rien, mais demarrer la reproduction TOT
+     (des que 2 animaux sont reunis) rapporte 1 tete gratuite par manche
+     restante, un effet compose qu'un glouton 1-coup ne voit pas.
+
+### Heuristiques ajoutees au `HeuristicBot`
+
+Pour partiellement compenser l'horizon 1-coup du bot glouton
+(`agricola2p/bots/heuristic_bot.py`), 2 heuristiques exploitent directement
+ces 2 mecaniques:
+
+1. **Anti-gaspillage de reproduction**: penalise tout groupe reproducteur
+   (>=2 animaux) deja a pleine capacite dans l'etat resultant d'un coup —
+   incite le bot a batir des auges *avant* que ca deborde, pas apres.
+2. **Demarrage precoce de la reproduction**: bonifie un coup qui fait
+   franchir le seuil de 2 animaux pour la 1ere fois sur un emplacement,
+   proportionnellement au nombre de manches restantes (chacune rapportera
+   potentiellement 1 tete gratuite).
+
+Verifie empiriquement (20 seeds, mode solo et 2 joueurs): amelioration
+**nette mais pas dominante** — +2,1 PV de moyenne en solo, et gagne 11
+parties sur 20 face a la version sans heuristiques en tete-a-tete 2 joueurs
+(8 defaites, 1 nulle). Un glouton 1-coup, meme aide par ces 2 heuristiques,
+reste loin du niveau atteint par une vraie recherche en arbre (MCTS): il
+gagne rarement plus de ~30 PV en solo contre 58,5 pour MCTS, ce qui confirme
+que planifier une sequence de 24 actions interdependantes depasse ce qu'un
+glouton peut voir, quelles que soient les heuristiques ajoutees.
+
 ## Pour aller plus loin
 
 Ces observations viennent d'un seul appariement MCTS(250) vs MCTS(250) — un
