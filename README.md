@@ -54,9 +54,17 @@ une presentation d'Agricola: Terre d'Elevage), precisee ensuite en detail sur
 le mecanisme central des clotures/enclos/batiments:
 
 - **Partie en 8 tours**, chaque joueur disposant de **3 ouvriers** (6
-  placements d'ouvrier au total par tour). **1 seul ouvrier par case
-  d'action**: une case occupee devient indisponible a l'autre joueur pour le
-  reste du tour (`state.is_space_free`).
+  placements d'ouvrier au total par tour, en alternance stricte: joueur 1,
+  joueur 2, joueur 1, ...). **1 seul ouvrier par case d'action**: une case
+  occupee devient indisponible a l'autre joueur pour le reste du tour
+  (`state.is_space_free`).
+- **Jeton 1er joueur "collant"**: le 1er joueur d'une manche reste le meme
+  d'une manche a l'autre par defaut. Prendre la case "Petit Bois"
+  (`rules_data.FIRST_PLAYER_SPACE` — la synthese utilisateur dit juste
+  "l'action bois" sans preciser laquelle, choix par analogie avec la case
+  "1er joueur + 1 cereale" de l'Agricola classique) octroie le jeton 1er
+  joueur pour la manche SUIVANTE a celui qui l'a prise, et il le garde tant
+  que personne ne reprend cette case.
 - **Plateau d'action precis** (17 cases, toutes disponibles des le tour 1,
   cf `rules_data.ACTION_SPACE_KIND`):
   - Ressources: Petit Bois (+1 bois/tour), Grand Bois (+2), Petite Pierre

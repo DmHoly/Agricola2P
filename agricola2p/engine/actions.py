@@ -262,6 +262,8 @@ def apply_action(state: GameState, player_idx: int, action: Action) -> None:
         gained = state.accumulators.get(action.space_id, {})
         player.gain(gained)
         state.accumulators[action.space_id] = dict.fromkeys(gained, 0)
+        if action.space_id == R.FIRST_PLAYER_SPACE:
+            state.next_starting_player_idx = player_idx
 
     elif action.kind == "animal_accum":
         species = Animal(action.payload["species"])

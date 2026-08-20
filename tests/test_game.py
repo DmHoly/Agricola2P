@@ -53,6 +53,34 @@ def test_random_playthrough_terminates():
     assert all(isinstance(s, (int, float)) for s in scores)
 
 
+def test_starting_player_is_sticky_unless_first_player_space_taken():
+    game = AgricolaGame.new_game(seed=11)
+    start = game.state.starting_player_idx
+
+    # Personne ne prend R.FIRST_PLAYER_SPACE ce tour: on evite cette case.
+    for _ in range(2 * R.WORKERS_PER_PLAYER):
+        actions = [a for a in game.legal_actions() if a.space_id != R.FIRST_PLAYER_SPACE]
+        game.apply(actions[0] if actions else game.legal_actions()[0])
+    assert game.state.round_no == 2
+    assert game.state.starting_player_idx == start  # inchange: personne n'a pris la case
+
+    # Le 2e joueur (pas le 1er joueur actuel) prend R.FIRST_PLAYER_SPACE.
+    other = 1 - start
+    while game.current_player_idx != other or not any(
+        a.space_id == R.FIRST_PLAYER_SPACE for a in game.legal_actions()
+    ):
+        actions = [a for a in game.legal_actions() if a.space_id != R.FIRST_PLAYER_SPACE]
+        game.apply(actions[0] if actions else game.legal_actions()[0])
+    move = next(a for a in game.legal_actions() if a.space_id == R.FIRST_PLAYER_SPACE)
+    assert game.current_player_idx == other
+    game.apply(move)
+    assert game.state.next_starting_player_idx == other
+
+    while game.state.round_no == 2:
+        game.apply(game.legal_actions()[0])
+    assert game.state.starting_player_idx == other  # devenu 1er joueur pour la manche suivante
+
+
 def test_tie_break_favours_non_first_mover():
     game = AgricolaGame.new_game(seed=1)
     # Aucun coup joue: fermes identiques (vides) -> scores egaux.

@@ -95,7 +95,12 @@ class AgricolaGame:
             state.final_scores = self.scores()
             return
 
-        state.starting_player_idx = state.opponent_idx(state.starting_player_idx)
+        # Le 1er joueur reste le meme d'une manche a l'autre, sauf si un
+        # joueur a pris R.FIRST_PLAYER_SPACE cette manche (cf actions.py):
+        # il devient alors 1er joueur pour la manche qui commence ici.
+        if state.next_starting_player_idx is not None:
+            state.starting_player_idx = state.next_starting_player_idx
+            state.next_starting_player_idx = None
         state.turn_order = _round_turn_order(state.starting_player_idx)
         state.turn_index = 0
         state.accumulate_round()

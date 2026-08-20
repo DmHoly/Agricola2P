@@ -61,6 +61,19 @@ TOTAL_ROUNDS = 8
 WORKERS_PER_PLAYER = 3
 
 # ---------------------------------------------------------------------------
+# Jeton 1er joueur
+# ---------------------------------------------------------------------------
+# Le 1er joueur d'une manche reste le meme d'une manche a l'autre, SAUF si un
+# joueur prend cette case d'action precise dans la manche: il devient alors
+# 1er joueur pour la manche SUIVANTE (et le reste tant que personne ne la
+# reprend). Assomption: la synthese utilisateur dit juste "l'action bois"
+# sans preciser laquelle des cases bois -- on retient ici la plus petite
+# ("Petit Bois" / wood_small), par analogie avec la case
+# "1er joueur + 1 cereale" de l'Agricola classique.
+
+FIRST_PLAYER_SPACE = "wood_small"
+
+# ---------------------------------------------------------------------------
 # Plateau / ferme
 # ---------------------------------------------------------------------------
 # Grille 4 lignes x 3 colonnes: lignes 0-1 = plateau de depart (3x2 = 6

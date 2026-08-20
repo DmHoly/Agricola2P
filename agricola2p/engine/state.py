@@ -40,6 +40,7 @@ class GameState:
     players: list[PlayerState]
     round_no: int = 1
     starting_player_idx: int = 0
+    next_starting_player_idx: int | None = None  # fixe par R.FIRST_PLAYER_SPACE, applique au round suivant
     first_mover_idx: int = 0  # qui a commence la toute premiere manche (regle d'egalite)
     turn_order: list[int] = field(default_factory=list)
     turn_index: int = 0
