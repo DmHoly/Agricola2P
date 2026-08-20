@@ -55,18 +55,32 @@ def test_buying_tile_unlocks_cells():
     assert fy.can_build_pasture(2, 0, 2, 2)
 
 
-def test_pasture_capacity_doubles_per_trough():
+def test_pasture_capacity_doubles_per_trough_placed_on_its_cells():
     fy = Farmyard()
-    pasture = fy.build_pasture(1, 0, 1, 1)  # 2 cases
-    assert pasture.capacity() == 4  # 2 * 2 * 2**0
-    fy.build_trough_on_pasture(pasture.pasture_id)
-    assert pasture.capacity() == 8  # 2 * 2 * 2**1
-    fy.build_trough_on_pasture(pasture.pasture_id)
-    assert pasture.capacity() == 16
-    fy.build_trough_on_pasture(pasture.pasture_id)
-    assert pasture.capacity() == 32  # plafond a 3 auges
+    fy.buy_tile("tile_a", [(2, 0), (2, 1), (2, 2)])
+    pasture = fy.build_pasture(2, 0, 2, 2)  # enclos de 3 cases
+    assert fy.pasture_capacity(pasture) == 6  # 3 * 2 * 2**0
+
+    fy.build_trough_on_terrain((2, 0))
+    assert fy.pasture_capacity(pasture) == 12  # 3 * 2 * 2**1
+    fy.build_trough_on_terrain((2, 1))
+    assert fy.pasture_capacity(pasture) == 24  # 3 * 2 * 2**2
+    fy.build_trough_on_terrain((2, 2))
+    assert fy.pasture_capacity(pasture) == 48  # 3 * 2 * 2**3 : 1 auge/case, 3 cases
+
+    # plus de case libre dans cet enclos pour poser une 4e auge
+    assert not any(fy.can_place_trough_on_terrain(c) for c in pasture.cells)
     with pytest.raises(FarmyardError):
-        fy.build_trough_on_pasture(pasture.pasture_id)
+        fy.build_trough_on_terrain((2, 0))  # deja une auge sur cette case precise
+
+
+def test_trough_placement_capped_at_one_per_cell():
+    fy = Farmyard()
+    cell = (1, 0)
+    fy.build_trough_on_terrain(cell)
+    assert not fy.can_place_trough_on_terrain(cell)
+    with pytest.raises(FarmyardError):
+        fy.build_trough_on_terrain(cell)
 
 
 def test_pasture_overfill_raises():
@@ -83,7 +97,7 @@ def test_yard_cell_needs_trough_to_house_animal():
     assert fy.cell_capacity(cell) == 0
     with pytest.raises(FarmyardError):
         fy.add_animals_to_cell(cell, Animal.BOAR, 1)
-    fy.build_trough_on_yard(cell)
+    fy.build_trough_on_terrain(cell)
     assert fy.cell_capacity(cell) == 1
     fy.add_animals_to_cell(cell, Animal.BOAR, 1)
     with pytest.raises(FarmyardError):
@@ -144,7 +158,7 @@ def test_tile_fully_used():
     fy.buy_tile("tile_a", [(2, 0), (2, 1), (2, 2)])
     assert not fy.tile_fully_used([(2, 0), (2, 1), (2, 2)])
     fy.build_building((2, 0))
-    fy.build_trough_on_yard((2, 1))
+    fy.build_trough_on_terrain((2, 1))
     fy.build_pasture(2, 2, 2, 2)
     assert fy.tile_fully_used([(2, 0), (2, 1), (2, 2)])
 
@@ -176,7 +190,7 @@ def test_move_animals_between_pastures_respects_single_species():
 def test_move_animals_does_not_exceed_destination_capacity():
     fy = Farmyard()
     pasture = fy.build_pasture(1, 0, 1, 1)  # capacite 4
-    fy.build_trough_on_yard((0, 2))  # capacite 1
+    fy.build_trough_on_terrain((0, 2))  # capacite 1
     fy.add_animals_to_pasture(pasture.pasture_id, Animal.CATTLE, 4)
     assert not fy.can_move_animals("pasture", pasture.pasture_id, "cell", (0, 2), Animal.CATTLE, 4)
     fy.move_animals("pasture", pasture.pasture_id, "cell", (0, 2), Animal.CATTLE, 1)

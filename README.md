@@ -75,10 +75,14 @@ le mecanisme central des clotures/enclos/batiments:
     jamais deplacee.
   - **Auges**: 2 cases distinctes — standard (la 1re auge de la visite est
     gratuite, puis 3 bois/auge supplementaire) et alternative (3 pierres/
-    auge, jamais de gratuite). Une seule visite peut poser plusieurs auges
-    a des emplacements differents (le moteur propose soit 1 auge a un
-    emplacement precis, soit toutes les auges possibles en une fois, plutot
-    que d'enumerer tous les sous-ensembles).
+    auge, jamais de gratuite). Une auge se pose sur **n'importe quelle case
+    de terrain**, libre OU faisant partie d'un enclos, au maximum **1 auge
+    par case** (pas de plafond arbitraire par enclos: la limite naturelle
+    est le nombre de cases de l'enclos). Une case libre sans auge ne loge
+    aucun animal (0), avec auge elle en loge 1. Une seule visite peut poser
+    plusieurs auges a des emplacements differents (le moteur propose soit 1
+    auge a un emplacement precis, soit toutes les auges possibles en une
+    fois, plutot que d'enumerer tous les sous-ensembles).
   - **Agrandissement de ferme** (case dediee, 3 pierres + 1 roseau): achete
     directement 1 tuile d'extension de 3 cases (max 2 tuiles au total).
   - **Agrandissement ou amelioration** (5 bois OU 5 pierres au choix): au

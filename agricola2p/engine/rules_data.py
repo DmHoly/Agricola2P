@@ -109,9 +109,16 @@ def fence_alt_cost(n: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Auges: 2 cases distinctes (standard: 1re gratuite puis 3 bois/auge ;
-# alternative: 3 pierre/auge, jamais de gratuite). Une case peut en poser
-# plusieurs en une seule visite.
+# Auges: 2 cases d'action distinctes pour en ACHETER (standard: 1re gratuite
+# puis 3 bois/auge ; alternative: 3 pierre/auge, jamais de gratuite). Une
+# visite peut en poser plusieurs a la fois, sur des cases differentes.
+#
+# Placement (regle precisee par l'utilisateur): une auge se pose sur
+# N'IMPORTE QUELLE case de terrain (libre OU faisant partie d'un enclos), au
+# maximum 1 auge par case -- pas de plafond artificiel par enclos au-dela de
+# cette limite naturelle (1/case). Une case libre sans auge loge 0 animal,
+# avec auge elle en loge 1 (YARD_TROUGH_CAPACITY). Un enclos de N cases loge
+# N*2 animaux de base, double par auge presente sur l'une de ses cases.
 # ---------------------------------------------------------------------------
 
 TROUGH_STANDARD_RESOURCE = Resource.WOOD
@@ -119,9 +126,8 @@ TROUGH_STANDARD_EXTRA_COST = 3  # par auge au-dela de la 1ere (gratuite)
 TROUGH_ALT_RESOURCE = Resource.STONE
 TROUGH_ALT_COST = 3  # par auge, des la 1ere
 
-MAX_TROUGHS_PER_PASTURE = 3
-BUILDING_TROUGH_BONUS = 1  # +1 animal si le batiment (stalle/etable) a une auge
-YARD_TROUGH_CAPACITY = 1  # case non cloturee equipee d'une auge
+BUILDING_TROUGH_BONUS = 1  # +1 animal si le batiment (stalle/etable) a une auge -- mecanique separee
+YARD_TROUGH_CAPACITY = 1  # case de terrain libre equipee d'une auge
 
 
 def trough_standard_cost(k: int) -> int:
@@ -133,7 +139,7 @@ def trough_alt_cost(k: int) -> int:
 
 
 def pasture_capacity(size: int, troughs: int) -> int:
-    """N cases * 2 animaux de base, double par auge (jusqu'a 3 auges)."""
+    """N cases * 2 animaux de base, double par auge presente sur l'enclos."""
     return size * 2 * (2 ** troughs)
 
 

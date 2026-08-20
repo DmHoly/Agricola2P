@@ -58,17 +58,19 @@ def _building_actions(player: PlayerState) -> list[Action]:
 
 
 def _trough_targets(fy) -> list[tuple[str, Any]]:
-    """Emplacements ou une auge peut etre posee: (target_kind, target_ref)."""
+    """Emplacements ou une auge peut etre posee: (target_kind, target_ref).
+
+    "terrain" = n'importe quelle case de terrain libre OU faisant partie
+    d'un enclos (max 1 auge/case) ; "building" = une Stalle/Etable sans
+    auge (mecanique separee, +1 capacite fixe).
+    """
     targets: list[tuple[str, Any]] = []
-    for pasture_id in fy.pastures:
-        if fy.can_build_trough_on_pasture(pasture_id):
-            targets.append(("pasture", pasture_id))
+    for cell in fy.playable_cells():
+        if fy.can_place_trough_on_terrain(cell):
+            targets.append(("terrain", cell))
     for cell in fy.building_cells:
         if fy.can_build_trough_on_building(cell):
             targets.append(("building", cell))
-    for cell in fy.playable_cells():
-        if fy.can_build_trough_on_yard(cell):
-            targets.append(("yard", cell))
     return targets
 
 
@@ -228,12 +230,10 @@ def legal_actions(state: GameState, player_idx: int) -> list[Action]:
 
 def _apply_trough_targets(fy, targets: list[list]) -> None:
     for target_kind, target_ref in targets:
-        if target_kind == "pasture":
-            fy.build_trough_on_pasture(target_ref)
-        elif target_kind == "building":
+        if target_kind == "building":
             fy.build_trough_on_building(tuple(target_ref))
         else:
-            fy.build_trough_on_yard(tuple(target_ref))
+            fy.build_trough_on_terrain(tuple(target_ref))
 
 
 def apply_action(state: GameState, player_idx: int, action: Action) -> None:

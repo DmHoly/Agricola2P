@@ -1,6 +1,6 @@
 """Modele de la ferme (farmyard) d'un joueur.
 
-Mecanique centrale (cloture/enclos/batiments), cf README:
+Mecanique centrale (cloture/enclos/batiments/auges), cf README:
 
 - Une barriere se pose sur une bordure entre 2 cases (ou le bord du plateau,
   toujours gratuit) et coute 1 ressource (bois OU pierre) par segment.
@@ -12,12 +12,14 @@ Mecanique centrale (cloture/enclos/batiments), cf README:
 - Une fois posee, une barriere/auge/batiment n'est jamais deplacee ni
   retiree (seul le contenu - les animaux - reste, par simplification,
   fixe une fois place: voir limitation documentee dans le README).
-- Un enclos de N cases loge N*2 animaux, doublant par auge (jusqu'a 3
-  auges -> N*16).
+- Une auge se pose sur N'IMPORTE QUELLE case de terrain (libre OU faisant
+  partie d'un enclos), au maximum 1 auge par case. Une case libre sans auge
+  ne loge aucun animal (0), avec auge elle en loge 1. Un enclos de N cases
+  loge N*2 animaux de base, et ce nombre double par auge presente sur l'une
+  de ses cases (jusqu'a N auges puisque 1 auge max/case -> N*2^(k+1)).
 - Une Stalle (1 case) loge 4 animaux (1 PV), amelio(rable en Etable (5
-  animaux, 2 PV) ou Etable ouverte (4 animaux, 2 PV).
-- Une case libre (hors maison/batiment/enclos) ne loge aucun animal tant
-  qu'elle n'a pas recu une auge (alors capacite 1).
+  animaux, 2 PV) ou Etable ouverte (4 animaux, 2 PV). Une auge sur une
+  Stalle/Etable ajoute +1 animal (mecanique separee des auges de terrain).
 
 Simplification assumee: les enclos sont des rectangles axis-aligned (pas de
 formes quelconques). La ferme grandit uniquement par l'achat de tuiles
@@ -45,7 +47,6 @@ class FarmyardError(ValueError):
 class Pasture:
     pasture_id: int
     cells: frozenset[Cell]
-    troughs: int = 0
     animal: Animal | None = None
     count: int = 0
 
@@ -53,8 +54,8 @@ class Pasture:
     def size(self) -> int:
         return len(self.cells)
 
-    def capacity(self) -> int:
-        return R.pasture_capacity(self.size, self.troughs)
+    def capacity(self, troughs: int) -> int:
+        return R.pasture_capacity(self.size, troughs)
 
 
 @dataclass
@@ -84,7 +85,7 @@ class Farmyard:
     cell_pasture: dict[Cell, int] = field(default_factory=dict)
     fences: set = field(default_factory=set)  # set[frozenset[Cell, Cell]]
     building_cells: dict[Cell, Building] = field(default_factory=dict)
-    trough_cells: set[Cell] = field(default_factory=set)  # case non cloturee equipee d'une auge
+    trough_cells: set[Cell] = field(default_factory=set)  # case de terrain (libre ou en enclos) avec 1 auge
     animal_cells: dict[Cell, tuple[Animal, int]] = field(default_factory=dict)
     _next_pasture_id: int = 1
 
@@ -206,35 +207,43 @@ class Farmyard:
             raise FarmyardError("Maison deja renovee")
         self.house_upgraded = True
 
-    # -- auges ---------------------------------------------------------
-    def can_build_trough_on_pasture(self, pasture_id: int) -> bool:
-        pasture = self.pastures.get(pasture_id)
-        return pasture is not None and pasture.troughs < R.MAX_TROUGHS_PER_PASTURE
+    # -- auges -----------------------------------------------------------
+    # Une auge se pose sur une case de terrain precise (libre OU faisant
+    # partie d'un enclos), au plus 1 auge par case. Les auges de batiment
+    # (Stalle/Etable) restent une mecanique separee (+1 capacite, cf Building).
+    def can_place_trough_on_terrain(self, cell: Cell) -> bool:
+        return (
+            self.is_unlocked(cell)
+            and not self.is_house(cell)
+            and cell not in self.building_cells
+            and cell not in self.trough_cells
+        )
+
+    def build_trough_on_terrain(self, cell: Cell) -> None:
+        if not self.can_place_trough_on_terrain(cell):
+            raise FarmyardError("Impossible d'ajouter une auge sur cette case")
+        self.trough_cells.add(cell)
 
     def can_build_trough_on_building(self, cell: Cell) -> bool:
         building = self.building_cells.get(cell)
         return building is not None and not building.has_trough
-
-    def can_build_trough_on_yard(self, cell: Cell) -> bool:
-        return self.is_unlocked(cell) and not self.is_house(cell) and cell not in self.used_cells()
-
-    def build_trough_on_pasture(self, pasture_id: int) -> None:
-        if not self.can_build_trough_on_pasture(pasture_id):
-            raise FarmyardError("Impossible d'ajouter une auge a cet enclos")
-        self.pastures[pasture_id].troughs += 1
 
     def build_trough_on_building(self, cell: Cell) -> None:
         if not self.can_build_trough_on_building(cell):
             raise FarmyardError("Impossible d'ajouter une auge a ce batiment")
         self.building_cells[cell].has_trough = True
 
-    def build_trough_on_yard(self, cell: Cell) -> None:
-        if not self.can_build_trough_on_yard(cell):
-            raise FarmyardError("Impossible d'ajouter une auge sur cette case")
-        self.trough_cells.add(cell)
-
     # -- animaux -----------------------------------------------------
+    def pasture_troughs(self, pasture: Pasture) -> int:
+        """Nombre de cases de cet enclos equipees d'une auge (1 max/case)."""
+        return len(pasture.cells & self.trough_cells)
+
+    def pasture_capacity(self, pasture: Pasture) -> int:
+        return pasture.capacity(self.pasture_troughs(pasture))
+
     def cell_capacity(self, cell: Cell) -> int:
+        if cell in self.cell_pasture:
+            return 0  # capacite geree via l'enclos, pas la case individuelle
         if cell in self.building_cells:
             return self.building_cells[cell].capacity()
         if cell in self.trough_cells:
@@ -255,7 +264,7 @@ class Farmyard:
         if pasture.animal is not None and pasture.animal != species and pasture.count > 0:
             raise FarmyardError("L'enclos contient deja une autre espece")
         prior_count = pasture.count if pasture.animal == species else 0
-        free = pasture.capacity() - prior_count
+        free = self.pasture_capacity(pasture) - prior_count
         added = min(n, free)
         if added <= 0:
             raise FarmyardError("Capacite de l'enclos depassee")
@@ -294,7 +303,7 @@ class Farmyard:
 
     def _location_capacity(self, kind: str, ref: Cell | int) -> int:
         if kind == "pasture":
-            return self.pastures[ref].capacity()
+            return self.pasture_capacity(self.pastures[ref])
         return self.cell_capacity(ref)
 
     def can_move_animals(
@@ -345,16 +354,16 @@ class Farmyard:
         """
         out: list[tuple[str, Cell | int, Animal, int]] = []
         for pasture in self.pastures.values():
+            cap = self.pasture_capacity(pasture)
             if pasture.animal is not None:
-                free = pasture.capacity() - pasture.count
+                free = cap - pasture.count
                 if free > 0:
                     out.append(("pasture", pasture.pasture_id, pasture.animal, free))
-            else:
-                cap = pasture.capacity()
-                if cap > 0:
-                    for species in Animal:
-                        out.append(("pasture", pasture.pasture_id, species, cap))
-        housing_cells = set(self.building_cells.keys()) | self.trough_cells
+            elif cap > 0:
+                for species in Animal:
+                    out.append(("pasture", pasture.pasture_id, species, cap))
+        # cases "standalone" (hors enclos): batiments + auges de terrain sur case libre
+        housing_cells = set(self.building_cells.keys()) | (self.trough_cells - set(self.cell_pasture.keys()))
         for cell in housing_cells:
             existing = self.animal_cells.get(cell)
             if existing and existing[1] > 0:
@@ -375,7 +384,7 @@ class Farmyard:
         produit 1 animal supplementaire (fin de chaque tour)."""
         for pasture in self.pastures.values():
             if pasture.animal is not None and pasture.count >= 2:
-                cap = pasture.capacity()
+                cap = self.pasture_capacity(pasture)
                 if pasture.count < cap:
                     pasture.count += 1
         for cell, (species, n) in list(self.animal_cells.items()):
