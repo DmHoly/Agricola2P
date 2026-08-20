@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import rules_data as R
-from .constants import Animal
+from .constants import Animal, Resource
 from .farmyard import FarmyardError
 from .state import GameState, PlayerState
 
@@ -38,19 +38,67 @@ def _fence_actions(player: PlayerState) -> list[Action]:
                     if not fy.can_build_pasture(r1, c1, r2, c2):
                         continue
                     cost = fy.fence_cost_for_rectangle(r1, c1, r2, c2)
-                    if cost > 0 and player.resources.get(R.Resource.WOOD, 0) >= cost:
-                        actions.append(Action("fencing", "fence", {"rect": (r1, c1, r2, c2)}))
+                    if cost <= 0:
+                        continue
+                    for resource in R.FENCE_RESOURCE_OPTIONS:
+                        if player.resources.get(resource, 0) >= cost:
+                            actions.append(
+                                Action("fencing", "fence", {"rect": (r1, c1, r2, c2), "resource": resource.value})
+                            )
     return actions
 
 
-def _stable_actions(player: PlayerState) -> list[Action]:
+def _building_actions(player: PlayerState) -> list[Action]:
     fy = player.farmyard
-    if not player.can_afford(R.STABLE_COST):
+    if not player.can_afford(R.STALLE_COST):
+        return []
+    return [
+        Action("build_building", "building", {"cell": cell})
+        for cell in fy.playable_cells()
+        if fy.can_build_building(cell)
+    ]
+
+
+def _upgrade_building_actions(player: PlayerState) -> list[Action]:
+    fy = player.farmyard
+    out = []
+    for cell in fy.building_cells:
+        if not fy.can_upgrade_building(cell):
+            continue
+        for new_level in R.BUILDING_UPGRADE_TARGETS:
+            for cost in R.BUILDING_UPGRADE_COST_OPTIONS:
+                if player.can_afford(cost):
+                    out.append(
+                        Action(
+                            "upgrade_building",
+                            "upgrade_building",
+                            {"cell": cell, "new_level": new_level, "cost": {r.value: v for r, v in cost.items()}},
+                        )
+                    )
+    return out
+
+
+def _upgrade_house_actions(player: PlayerState) -> list[Action]:
+    fy = player.farmyard
+    if fy.can_upgrade_house() and player.can_afford(R.HOUSE_UPGRADE_COST):
+        return [Action("upgrade_house", "upgrade_house", {})]
+    return []
+
+
+def _trough_actions(player: PlayerState) -> list[Action]:
+    fy = player.farmyard
+    if not player.can_afford(R.TROUGH_COST):
         return []
     out = []
+    for pasture_id in fy.pastures:
+        if fy.can_build_trough_on_pasture(pasture_id):
+            out.append(Action("build_trough", "trough", {"target_kind": "pasture", "target_ref": pasture_id}))
+    for cell in fy.building_cells:
+        if fy.can_build_trough_on_building(cell):
+            out.append(Action("build_trough", "trough", {"target_kind": "building", "target_ref": cell}))
     for cell in fy.playable_cells():
-        if fy.can_build_stable(cell):
-            out.append(Action("build_stable", "stable", {"cell": cell}))
+        if fy.can_build_trough_on_yard(cell):
+            out.append(Action("build_trough", "trough", {"target_kind": "yard", "target_ref": cell}))
     return out
 
 
@@ -100,8 +148,14 @@ def legal_actions(state: GameState, player_idx: int) -> list[Action]:
             out.extend(_animal_accum_actions(space_id, state, player))
         elif kind == "fence":
             out.extend(_fence_actions(player))
-        elif kind == "stable":
-            out.extend(_stable_actions(player))
+        elif kind == "building":
+            out.extend(_building_actions(player))
+        elif kind == "upgrade_building":
+            out.extend(_upgrade_building_actions(player))
+        elif kind == "upgrade_house":
+            out.extend(_upgrade_house_actions(player))
+        elif kind == "trough":
+            out.extend(_trough_actions(player))
         elif kind == "extension":
             out.extend(_extension_actions(player))
         elif kind == "special_building":
@@ -140,13 +194,36 @@ def apply_action(state: GameState, player_idx: int, action: Action) -> None:
 
     elif action.kind == "fence":
         r1, c1, r2, c2 = action.payload["rect"]
+        resource = Resource(action.payload["resource"])
         cost = fy.fence_cost_for_rectangle(r1, c1, r2, c2)
-        player.pay({R.Resource.WOOD: cost})
+        player.pay({resource: cost})
         fy.build_pasture(r1, c1, r2, c2)
 
-    elif action.kind == "stable":
-        player.pay(R.STABLE_COST)
-        fy.build_stable(tuple(action.payload["cell"]))
+    elif action.kind == "building":
+        player.pay(R.STALLE_COST)
+        fy.build_building(tuple(action.payload["cell"]))
+
+    elif action.kind == "upgrade_building":
+        cell = tuple(action.payload["cell"])
+        new_level = action.payload["new_level"]
+        cost = {Resource(r): v for r, v in action.payload["cost"].items()}
+        player.pay(cost)
+        fy.upgrade_building(cell, new_level)
+
+    elif action.kind == "upgrade_house":
+        player.pay(R.HOUSE_UPGRADE_COST)
+        fy.upgrade_house()
+
+    elif action.kind == "trough":
+        player.pay(R.TROUGH_COST)
+        target_kind = action.payload["target_kind"]
+        target_ref = action.payload["target_ref"]
+        if target_kind == "pasture":
+            fy.build_trough_on_pasture(target_ref)
+        elif target_kind == "building":
+            fy.build_trough_on_building(tuple(target_ref))
+        else:
+            fy.build_trough_on_yard(tuple(target_ref))
 
     elif action.kind == "extension":
         tile_id = action.payload["tile_id"]

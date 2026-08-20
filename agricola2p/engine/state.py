@@ -40,13 +40,14 @@ class GameState:
     players: list[PlayerState]
     round_no: int = 1
     starting_player_idx: int = 0
+    first_mover_idx: int = 0  # qui a commence la toute premiere manche (regle d'egalite)
     turn_order: list[int] = field(default_factory=list)
     turn_index: int = 0
     occupied_spaces: dict[str, int] = field(default_factory=dict)
     accumulators: dict[str, int] = field(default_factory=_initial_accumulators)
     available_buildings: list[SpecialBuilding] = field(default_factory=list)
     finished: bool = False
-    final_scores: list[int] | None = None
+    final_scores: list[float] | None = None
 
     @classmethod
     def new_game(cls, player_names: tuple[str, str] = ("P1", "P2"), seed: int | None = None) -> "GameState":
@@ -55,6 +56,7 @@ class GameState:
         rng = random.Random(seed)
         players = [PlayerState(name=n) for n in player_names]
         state = cls(players=players, available_buildings=shuffled_pool(rng))
+        state.first_mover_idx = state.starting_player_idx
         state.turn_order = _round_turn_order(state.starting_player_idx)
         state.accumulate_round()
         return state

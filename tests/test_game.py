@@ -46,4 +46,12 @@ def test_random_playthrough_terminates():
     assert moves == R.TOTAL_ROUNDS * 2 * R.WORKERS_PER_PLAYER
     scores = game.scores()
     assert len(scores) == 2
-    assert all(isinstance(s, int) for s in scores)
+    assert all(isinstance(s, (int, float)) for s in scores)
+
+
+def test_tie_break_favours_non_first_mover():
+    game = AgricolaGame.new_game(seed=1)
+    # Aucun coup joue: fermes identiques (vides) -> scores egaux.
+    assert game.scores()[0] == game.scores()[1]
+    assert game.state.first_mover_idx == 0
+    assert game.winner() == 1

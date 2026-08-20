@@ -49,65 +49,83 @@ print(game.scores())
 
 ## Fidelite aux regles officielles
 
-Le ruleset implemente suit la synthese fournie (basee sur la presentation
-video d'Agricola: Terre d'Elevage par la chaine Ludovox):
+Le ruleset implemente suit la synthese fournie par l'utilisateur (basee sur
+une presentation d'Agricola: Terre d'Elevage), precisee ensuite en detail sur
+le mecanisme central des clotures/enclos/batiments:
 
 - **Partie en 8 tours**, chaque joueur disposant de **3 ouvriers** (6
   placements d'ouvrier au total par tour). Une case d'action occupee par un
   ouvrier devient indisponible a l'autre joueur pour le reste du tour.
-- **3 ressources**: bois, pierre, roseau. Elles s'accumulent sur leurs cases
-  du plateau central a chaque debut de tour si personne ne les prend
-  (`rules_data.ACCUMULATING_SPACES`); prendre la case donne tout ce qui s'y
-  est accumule et la remet a zero.
-- **4 especes animales**: mouton, cochon, vache, cheval. Elles proviennent
-  elles aussi de cases d'accumulation dediees sur le plateau (pas d'achat
-  contre ressources).
-- **Enclos/clotures**: un enclos pose (rectangle de cases cloturees) ne peut
-  plus etre deplace ni modifie ensuite. Un animal seul peut occuper une case
-  non cloturee (1 max); un enclos loge plusieurs animaux de la meme espece;
-  une etable (batiment construit sur une case) abrite aussi des animaux et en
-  augmente la capacite.
+- **3 ressources**: bois, pierre, roseau, qui s'accumulent sur leurs cases du
+  plateau central a chaque debut de tour si personne ne les prend
+  (`rules_data.ACCUMULATING_SPACES`).
+- **4 especes animales** (mouton, cochon, vache, cheval), obtenues via des
+  cases d'accumulation dediees sur le plateau.
+- **Plateau de depart**: grille 3x2 (2 cases maison + 4 cases ouvertes), avec
+  jusqu'a **2 tuiles d'extension** de 3 cases chacune (achetees en
+  ressources).
+- **Clotures**: se posent sur les bordures entre 2 cases (ou le bord du
+  plateau, toujours gratuit) et se paient en bois OU en pierre, 1 ressource
+  par segment. **Deux enclos voisins mutualisent** la barriere qui les
+  separe (payee une seule fois — le moteur retient chaque arete deja
+  cloturee). Les bords de la **maison** et des **batiments** (stalle/etable)
+  font office de **murs naturels gratuits**. Une fois posee, une
+  barriere/auge/batiment n'est plus jamais deplacee.
+- **Capacite des enclos**: un enclos de N cases loge `N x 2` animaux de base,
+  et ce nombre **double par auge** ajoutee (jusqu'a 3 auges -> `N x 16`). Une
+  case non cloturee ne loge un animal que si elle est equipee d'une auge (1
+  animal). Une **Stalle** (1 case, 3 bois + 1 pierre, 1 PV) loge 4 animaux
+  sans cloture, et peut etre amelioree en **Etable** (5 bois ou 5 pierre, 2
+  PV, 5 animaux) ou **Etable ouverte** (5 bois ou 5 pierre, 2 PV, 4 animaux).
+  Une auge sur un batiment ajoute +1 animal.
+- **Maison a colombage**: renovation de la maison de depart (3 bois + 1
+  pierre, +2 PV en fin de partie, aucune capacite animale).
 - **Reproduction**: a la fin de **chaque** tour, tout groupe d'au moins 2
   animaux de la meme espece avec de la place produit 1 bebe supplementaire.
-- **Agrandissement**: la ferme grandit exclusivement via l'achat de tuiles
-  d'extension (`rules_data.EXTENSION_TILES`), payees en ressources.
-- **Batiments speciaux**: construits contre ressources, rapportent des points
-  de victoire directs et parfois un petit bonus immediat.
-- **Score final**: total par espece selon un bareme unique
-  (`rules_data.ANIMAL_SCORE_TABLE`) qui penalise avoir **moins de 3** animaux
-  d'une espece et recompense les paliers superieurs, + points des batiments
-  speciaux construits, + bonus "exploitation complete" par tuile d'extension
-  entierement amenagee (aucune case libre dessus) en fin de partie.
+- **Batiments speciaux**: pool partage distinct (Bergerie, Porcherie, Puits,
+  Carriere privee, Entrepot...), achetes contre ressources sans occuper de
+  case de ferme, rapportent des PV directs et parfois un bonus. L'Entrepot
+  rapporte +0.5 PV par ressource restante en reserve en fin de partie.
+- **Score final**: `+1 PV` par animal, plus un **bareme par paliers propre a
+  chaque espece** (malus fixe de -3 PV si moins de 4 animaux d'une espece,
+  paliers croissants ensuite), plus les PV des batiments (stalle/etable,
+  maison a colombage, batiments speciaux), plus **+4 PV par tuile
+  d'extension entierement amenagee** (batiment, auge ou pature cloturee sur
+  ses 3 cases) en fin de partie.
+- **Egalite**: en cas de score final egal, le joueur qui n'a **pas** commence
+  la toute premiere manche l'emporte.
 
 **Ce qui reste une approximation** (la synthese fournie ne donne pas ces
 details, donc des valeurs raisonnables ont ete choisies et sont centralisees
 dans `rules_data.py` pour rester faciles a corriger):
 
 - Les incrementations exactes d'accumulation par tour (bois/pierre/roseau/
-  animaux), les couts de cloture/etable/tuiles/batiments, et le bareme de
-  score precis sont des choix d'equilibrage, pas une retranscription du
-  livret officiel.
+  animaux) sont des choix d'equilibrage.
 - Les enclos sont des **rectangles** (pas de formes libres).
-- Les tuiles d'extension ont une forme, un emplacement et un cout fixes
-  choisis arbitrairement (5 tuiles de 2 cases), plutot que le systeme exact
-  du jeu (ordre d'achat, formes variees, etc.).
-- Les "batiments speciaux" utilisent un **pool generique** de 7 batiments a
-  cout/points/bonus simples, plutot que la liste exacte et les capacites
-  particulieres du jeu physique.
+- Les tuiles d'extension ont une forme/un emplacement/un cout fixes choisis
+  arbitrairement (2 tuiles de 3 cases), plutot que le systeme exact du jeu.
+- Le pool de "batiments speciaux" (au-dela de l'Entrepot, donne en exemple)
+  utilise des noms/couts/PV generiques plutot que la liste exacte du jeu
+  physique.
+- Les animaux places restent **fixes** une fois poses: le moteur ne modelise
+  pas le redeplacement libre des animaux entre emplacements (contrairement
+  aux barrieres/auges/batiments qui sont bien immuables comme dans le vrai
+  jeu, les animaux, eux, peuvent normalement etre redeplaces librement).
 - Le bot MCTS clone l'etat de jeu (y compris l'accumulation a venir, fixee au
   moment du clone): depuis un etat donne, la partie redevient donc a
   information parfaite, ce qui simplifie l'algorithme (MCTS classique plutot
   qu'un MCTS a information imparfaite/ISMCTS).
 
 **Tout est centralise dans `agricola2p/engine/rules_data.py`** precisement
-pour que ce soit facile a corriger: si une source plus precise (livret de
-regles) est disponible, il suffit d'ajuster les constantes/tables de ce
-fichier — aucun autre module ne contient de valeur numerique "en dur". Le
-reste du moteur (`farmyard.py`, `actions.py`, `game.py`) reste correct quelles
-que soient ces valeurs.
+pour que ce soit facile a corriger: si une source plus precise est
+disponible, il suffit d'ajuster les constantes/tables de ce fichier — aucun
+autre module ne contient de valeur numerique "en dur". Le reste du moteur
+(`farmyard.py`, `actions.py`, `game.py`) reste correct quelles que soient ces
+valeurs.
 
 ## Prochaines etapes possibles
 
+- Modeliser le redeplacement libre des animaux entre emplacements.
 - Remplacer le pool generique de batiments speciaux et les tuiles
   d'extension par les vraies listes du jeu (texte + effet exact + formes).
 - Autoriser des formes d'enclos non rectangulaires (clotures libres).

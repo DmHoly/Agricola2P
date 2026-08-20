@@ -7,17 +7,22 @@ from .actions import Action, apply_action, legal_actions
 from .state import GameState, PlayerState, _round_turn_order
 
 
-def score_player(player: PlayerState) -> int:
+def score_player(player: PlayerState) -> float:
     fy = player.farmyard
-    total = 0
+    total = 0.0
 
     animals = fy.total_animals()
-    table = R.ANIMAL_SCORE_TABLE
-    for count in animals.values():
-        idx = min(count, len(table) - 1)
-        total += table[idx]
+    total += sum(animals.values()) * R.BASE_POINTS_PER_ANIMAL
+    for species, count in animals.items():
+        total += R.species_points(species, count)
 
     total += sum(b.points for b in player.buildings)
+    leftover = sum(player.resources.values())
+    total += sum(b.per_leftover_resource * leftover for b in player.buildings)
+
+    total += sum(building.points() for building in fy.building_cells.values())
+    if fy.house_upgraded:
+        total += R.HOUSE_UPGRADE_POINTS
 
     for tile in R.EXTENSION_TILES:
         if tile["id"] in fy.owned_tiles and fy.tile_fully_used(tile["cells"]):
@@ -56,14 +61,16 @@ class AgricolaGame:
         apply_action(self.state, player_idx, action)
         self._advance_turn()
 
-    def scores(self) -> list[int]:
+    def scores(self) -> list[float]:
         return [score_player(p) for p in self.state.players]
 
     def winner(self) -> int | None:
-        """Index du gagnant, ou None en cas d'egalite (partie doit etre finie)."""
+        """Index du gagnant. En cas d'egalite stricte des scores, le joueur
+        qui N'a PAS commence la toute premiere manche l'emporte (regle
+        d'egalite: "le 1er joueur de la manche 1 perd l'egalite")."""
         s = self.scores()
         if s[0] == s[1]:
-            return None
+            return 1 - self.state.first_mover_idx
         return 0 if s[0] > s[1] else 1
 
     # -- interne ----------------------------------------------------

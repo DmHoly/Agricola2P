@@ -1,12 +1,27 @@
 """Modele de la ferme (farmyard) d'un joueur.
 
-Simplifications assumees (voir README):
-- Les enclos sont des rectangles axis-aligned (pas de formes quelconques).
-  Une fois pose, un enclos n'est jamais deplace ni modifie (conforme aux
-  regles: "un enclos pose ne peut plus etre deplace ni modifie").
-- La ferme grandit uniquement par l'achat de tuiles d'extension
-  (rules_data.EXTENSION_TILES); les cases non deverrouillees ne peuvent
-  accueillir ni cloture, ni etable, ni animal.
+Mecanique centrale (cloture/enclos/batiments), cf README:
+
+- Une barriere se pose sur une bordure entre 2 cases (ou le bord du plateau,
+  toujours gratuit) et coute 1 ressource (bois OU pierre) par segment.
+- Deux enclos voisins MUTUALISENT la barriere qui les separe: elle n'est
+  payee qu'une fois (le moteur retient les aretes deja cloturees dans
+  `fences` et ne les refacture jamais).
+- Les bords de la maison et des batiments (stalle/etable) sont des murs
+  naturels gratuits: pas besoin de barriere le long de leur cote.
+- Une fois posee, une barriere/auge/batiment n'est jamais deplacee ni
+  retiree (seul le contenu - les animaux - reste, par simplification,
+  fixe une fois place: voir limitation documentee dans le README).
+- Un enclos de N cases loge N*2 animaux, doublant par auge (jusqu'a 3
+  auges -> N*16).
+- Une Stalle (1 case) loge 4 animaux (1 PV), amelio(rable en Etable (5
+  animaux, 2 PV) ou Etable ouverte (4 animaux, 2 PV).
+- Une case libre (hors maison/batiment/enclos) ne loge aucun animal tant
+  qu'elle n'a pas recu une auge (alors capacite 1).
+
+Simplification assumee: les enclos sont des rectangles axis-aligned (pas de
+formes quelconques). La ferme grandit uniquement par l'achat de tuiles
+d'extension (rules_data.EXTENSION_TILES, max 2, 3 cases chacune).
 """
 
 from __future__ import annotations
@@ -17,6 +32,9 @@ from . import rules_data as R
 from .constants import Animal
 
 Cell = tuple[int, int]
+Edge = frozenset  # frozenset({cellA, cellB})
+
+_DIRECTIONS = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
 
 class FarmyardError(ValueError):
@@ -27,7 +45,7 @@ class FarmyardError(ValueError):
 class Pasture:
     pasture_id: int
     cells: frozenset[Cell]
-    stables: int = 0
+    troughs: int = 0
     animal: Animal | None = None
     count: int = 0
 
@@ -36,9 +54,20 @@ class Pasture:
         return len(self.cells)
 
     def capacity(self) -> int:
-        # Chaque case cloturee loge 1 animal ; chaque etable ajoute
-        # (STABLE_CAPACITY - 1) places supplementaires dans l'enclos.
-        return self.size + self.stables * (R.STABLE_CAPACITY - 1)
+        return R.pasture_capacity(self.size, self.troughs)
+
+
+@dataclass
+class Building:
+    level: str = "stalle"  # "stalle" | "etable" | "etable_ouverte"
+    has_trough: bool = False
+
+    def capacity(self) -> int:
+        base = R.BUILDING_LEVELS[self.level]["capacity"]
+        return base + (R.BUILDING_TROUGH_BONUS if self.has_trough else 0)
+
+    def points(self) -> int:
+        return R.BUILDING_LEVELS[self.level]["points"]
 
 
 @dataclass
@@ -46,13 +75,16 @@ class Farmyard:
     rows: int = R.GRID_ROWS
     cols: int = R.GRID_COLS
     house_cells: set[Cell] = field(default_factory=lambda: set(R.INITIAL_HOUSE_CELLS))
+    house_upgraded: bool = False
     unlocked_cells: set[Cell] = field(
         default_factory=lambda: set(R.INITIAL_HOUSE_CELLS) | set(R.INITIAL_OPEN_CELLS)
     )
     owned_tiles: set[str] = field(default_factory=set)
     pastures: dict[int, Pasture] = field(default_factory=dict)
     cell_pasture: dict[Cell, int] = field(default_factory=dict)
-    stable_cells: set[Cell] = field(default_factory=set)  # etables hors enclos
+    fences: set = field(default_factory=set)  # set[frozenset[Cell, Cell]]
+    building_cells: dict[Cell, Building] = field(default_factory=dict)
+    trough_cells: set[Cell] = field(default_factory=set)  # case non cloturee equipee d'une auge
     animal_cells: dict[Cell, tuple[Animal, int]] = field(default_factory=dict)
     _next_pasture_id: int = 1
 
@@ -68,13 +100,13 @@ class Farmyard:
         return cell in self.unlocked_cells
 
     def playable_cells(self) -> list[Cell]:
-        """Cases deverrouillees, hors maison, utilisables pour enclos/etable/animal."""
+        """Cases deverrouillees, hors maison, utilisables pour enclos/batiment/auge."""
         return [c for c in self.unlocked_cells if c not in self.house_cells]
 
     def used_cells(self) -> set[Cell]:
         used = set(self.house_cells) | set(self.cell_pasture.keys())
-        used |= self.stable_cells
-        used |= self.animal_cells.keys()
+        used |= self.building_cells.keys()
+        used |= self.trough_cells
         return used
 
     def free_cells(self) -> list[Cell]:
@@ -92,6 +124,27 @@ class Farmyard:
         used = self.used_cells()
         return all(c in used for c in cells)
 
+    # -- murs naturels & mutualisation des barrieres --------------------
+    def _is_natural_wall(self, cell: Cell) -> bool:
+        return cell in self.house_cells or cell in self.building_cells
+
+    def _boundary_edges_requiring_fence(self, cells: set[Cell]) -> set:
+        edges = set()
+        for cell in cells:
+            for dr, dc in _DIRECTIONS:
+                nb = (cell[0] + dr, cell[1] + dc)
+                if nb in cells:
+                    continue  # arete interne au nouvel enclos: pas de barriere
+                if not self.in_bounds(nb):
+                    continue  # bord du plateau: gratuit
+                if self._is_natural_wall(nb):
+                    continue  # mur naturel (maison/batiment): gratuit
+                edge = Edge((cell, nb))
+                if edge in self.fences:
+                    continue  # deja cloturee par un enclos voisin: mutualisee
+                edges.add(edge)
+        return edges
+
     # -- enclos / clotures --------------------------------------------
     def rectangle_cells(self, r1: int, c1: int, r2: int, c2: int) -> list[Cell]:
         lo_r, hi_r = sorted((r1, r2))
@@ -100,16 +153,7 @@ class Farmyard:
 
     def fence_cost_for_rectangle(self, r1: int, c1: int, r2: int, c2: int) -> int:
         cells = set(self.rectangle_cells(r1, c1, r2, c2))
-        edges = 0
-        for (r, c) in cells:
-            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                nb = (r + dr, c + dc)
-                if nb in cells:
-                    continue
-                if self.in_bounds(nb):
-                    edges += 1  # frontiere interne: cloture necessaire
-                # si hors grille: bord de ferme, pas besoin de cloture
-        return edges
+        return len(self._boundary_edges_requiring_fence(cells))
 
     def can_build_pasture(self, r1: int, c1: int, r2: int, c2: int) -> bool:
         cells = self.rectangle_cells(r1, c1, r2, c2)
@@ -121,7 +165,11 @@ class Farmyard:
     def build_pasture(self, r1: int, c1: int, r2: int, c2: int) -> Pasture:
         if not self.can_build_pasture(r1, c1, r2, c2):
             raise FarmyardError("Rectangle d'enclos invalide ou deja occupe")
-        cells = frozenset(self.rectangle_cells(r1, c1, r2, c2))
+        cells_set = set(self.rectangle_cells(r1, c1, r2, c2))
+        new_fences = self._boundary_edges_requiring_fence(cells_set)
+        self.fences |= new_fences
+
+        cells = frozenset(cells_set)
         pasture = Pasture(pasture_id=self._next_pasture_id, cells=cells)
         self._next_pasture_id += 1
         self.pastures[pasture.pasture_id] = pasture
@@ -129,32 +177,69 @@ class Farmyard:
             self.cell_pasture[c] = pasture.pasture_id
         return pasture
 
-    # -- etables ---------------------------------------------------------
-    def can_build_stable(self, cell: Cell) -> bool:
-        if not self.is_unlocked(cell) or self.is_house(cell):
-            return False
-        if cell in self.stable_cells:
-            return False
-        pid = self.cell_pasture.get(cell)
-        if pid is not None:
-            pasture = self.pastures[pid]
-            return pasture.stables < pasture.size
-        return True  # case libre ou avec un animal deja pose: l'etable peut s'y ajouter
+    # -- batiments (Stalle -> Etable / Etable ouverte) --------------------
+    def can_build_building(self, cell: Cell) -> bool:
+        return self.is_unlocked(cell) and not self.is_house(cell) and cell not in self.used_cells()
 
-    def build_stable(self, cell: Cell) -> None:
-        if not self.can_build_stable(cell):
-            raise FarmyardError("Impossible de construire une etable ici")
-        pid = self.cell_pasture.get(cell)
-        if pid is not None:
-            self.pastures[pid].stables += 1
-        else:
-            self.stable_cells.add(cell)
+    def build_building(self, cell: Cell) -> None:
+        if not self.can_build_building(cell):
+            raise FarmyardError("Impossible de construire un batiment ici")
+        self.building_cells[cell] = Building(level="stalle")
+
+    def can_upgrade_building(self, cell: Cell) -> bool:
+        building = self.building_cells.get(cell)
+        return building is not None and building.level == "stalle"
+
+    def upgrade_building(self, cell: Cell, new_level: str) -> None:
+        if not self.can_upgrade_building(cell):
+            raise FarmyardError("Impossible d'ameliorer ce batiment")
+        if new_level not in R.BUILDING_UPGRADE_TARGETS:
+            raise FarmyardError("Niveau de batiment inconnu")
+        self.building_cells[cell].level = new_level
+
+    # -- renovation de la maison -----------------------------------------
+    def can_upgrade_house(self) -> bool:
+        return not self.house_upgraded
+
+    def upgrade_house(self) -> None:
+        if not self.can_upgrade_house():
+            raise FarmyardError("Maison deja renovee")
+        self.house_upgraded = True
+
+    # -- auges ---------------------------------------------------------
+    def can_build_trough_on_pasture(self, pasture_id: int) -> bool:
+        pasture = self.pastures.get(pasture_id)
+        return pasture is not None and pasture.troughs < R.MAX_TROUGHS_PER_PASTURE
+
+    def can_build_trough_on_building(self, cell: Cell) -> bool:
+        building = self.building_cells.get(cell)
+        return building is not None and not building.has_trough
+
+    def can_build_trough_on_yard(self, cell: Cell) -> bool:
+        return self.is_unlocked(cell) and not self.is_house(cell) and cell not in self.used_cells()
+
+    def build_trough_on_pasture(self, pasture_id: int) -> None:
+        if not self.can_build_trough_on_pasture(pasture_id):
+            raise FarmyardError("Impossible d'ajouter une auge a cet enclos")
+        self.pastures[pasture_id].troughs += 1
+
+    def build_trough_on_building(self, cell: Cell) -> None:
+        if not self.can_build_trough_on_building(cell):
+            raise FarmyardError("Impossible d'ajouter une auge a ce batiment")
+        self.building_cells[cell].has_trough = True
+
+    def build_trough_on_yard(self, cell: Cell) -> None:
+        if not self.can_build_trough_on_yard(cell):
+            raise FarmyardError("Impossible d'ajouter une auge sur cette case")
+        self.trough_cells.add(cell)
 
     # -- animaux -----------------------------------------------------
     def cell_capacity(self, cell: Cell) -> int:
-        if cell in self.stable_cells:
-            return R.STABLE_CAPACITY
-        return R.MAX_ANIMALS_UNFENCED_NO_STABLE
+        if cell in self.building_cells:
+            return self.building_cells[cell].capacity()
+        if cell in self.trough_cells:
+            return R.YARD_TROUGH_CAPACITY
+        return 0
 
     def total_animals(self) -> dict[Animal, int]:
         totals = {a: 0 for a in Animal}
@@ -206,7 +291,8 @@ class Farmyard:
                 if cap > 0:
                     for species in Animal:
                         out.append(("pasture", pasture.pasture_id, species, cap))
-        for cell in self.stable_cells | set(self.free_cells()):
+        housing_cells = set(self.building_cells.keys()) | self.trough_cells
+        for cell in housing_cells:
             existing = self.animal_cells.get(cell)
             if existing and existing[1] > 0:
                 species, n = existing
