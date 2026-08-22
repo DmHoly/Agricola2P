@@ -146,6 +146,51 @@ gagne rarement plus de ~30 PV en solo contre 58,5 pour MCTS, ce qui confirme
 que planifier une sequence de 24 actions interdependantes depasse ce qu'un
 glouton peut voir, quelles que soient les heuristiques ajoutees.
 
+## Bot par apprentissage par renforcement (RLBot)
+
+`agricola2p/rl/` entraine un reseau de valeur (petit MLP numpy, cf
+`value_net.py`) par self-play: des parties sont jouees par des bots
+existants (`HeuristicBot`/`RandomBot`, melanges avec de l'exploration
+aleatoire pour diversifier les etats visites), et le reseau apprend a
+predire, a partir d'un etat encode (`features.py`, ~60 dimensions:
+ressources, animaux, capacites d'enclos/batiments, tuiles, batiments
+speciaux, accumulateurs partages du plateau, score actuel), le retour final
+Monte-Carlo (`score(moi) - score(adversaire)` en fin de partie) — une
+evaluation de politique par apprentissage supervise sur les resultats
+observes.
+
+Poids fournis dans le depot (`agricola2p/rl/weights.npz`, entraine sur 3000
+parties de self-play, 80 epoques — reentrainable via
+`python3 -m agricola2p.rl.train`). Deux facons de l'utiliser:
+
+- **`RLBot`**: glouton 1 coup comme `HeuristicBot`, mais qui evalue chaque
+  etat resultant avec le reseau appris au lieu du bareme de score exact.
+- **`MCTSBot(value_fn=...)`**: remplace les simulations jusqu'en fin de
+  partie par une evaluation directe du reseau a chaque feuille non-terminale
+  ("bootstrap", a la AlphaZero) — ~10x plus rapide par iteration, donc bien
+  plus d'iterations pour le meme temps de calcul.
+
+**Resultats mesures** (parties completes via le moteur reel, pas une
+estimation):
+
+| Confrontation | Resultat |
+|---|---|
+| RLBot vs RandomBot (20 seeds) | **20-0** |
+| RLBot vs HeuristicBot (20 seeds) | **20-0** |
+| RLBot vs MCTSBot-rollout (150 iterations, 10 seeds) | 4-6 (competitif malgre un seul coup d'avance) |
+| MCTS+bootstrap (300 iter, reseau appris) vs MCTS+rollout classique (300 iter, 10 seeds) | **7-3** |
+
+Le reseau de valeur, bien qu'entraine sur un signal bruite (la loss de
+validation oscille pendant l'entrainement — la variance d'issue d'une
+partie a partir d'un etat donne reste elevee vu la taille de l'espace de
+recherche), capture visiblement mieux le potentiel latent d'un etat que le
+score exact seul (capacite d'enclos pas encore exploitee, ressources/
+animaux accumules sur le plateau...): c'est precisement ce qu'un glouton
+base sur `score_player` ne peut pas voir a 1 coup. Meme constat que pour les
+heuristiques de reproduction (section precedente), en plus marque: la valeur
+d'un etat depend de ce qu'il permettra de faire dans les manches suivantes,
+pas seulement de ce qu'il vaut a l'instant T.
+
 ## Pour aller plus loin
 
 Ces observations viennent d'un seul appariement MCTS(250) vs MCTS(250) — un
