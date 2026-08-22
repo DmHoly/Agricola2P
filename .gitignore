@@ -5,3 +5,8 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Poids RL generes localement par `python3 -m agricola2p.rl.train`
+# (reproductibles a partir du code + d'une seed, pas versionnes par defaut).
+agricola2p/rl/weights.npz
+

@@ -14,10 +14,24 @@ from .bots.mcts_bot import MCTSBot
 from .bots.random_bot import RandomBot
 from .engine.game import AgricolaGame
 
+def _make_rl_bot(seed, iterations):
+    from .bots.rl_bot import RLBot
+
+    return RLBot(seed=seed)
+
+
+def _make_mcts_rl_bot(seed, iterations):
+    from .rl.mcts_value_fn import load_value_fn
+
+    return MCTSBot(iterations=iterations, seed=seed, value_fn=load_value_fn())
+
+
 BOT_FACTORIES = {
     "random": lambda seed, iterations: RandomBot(seed=seed),
     "heuristic": lambda seed, iterations: HeuristicBot(seed=seed),
     "mcts": lambda seed, iterations: MCTSBot(iterations=iterations, seed=seed),
+    "rl": _make_rl_bot,
+    "mcts_rl": _make_mcts_rl_bot,
 }
 
 

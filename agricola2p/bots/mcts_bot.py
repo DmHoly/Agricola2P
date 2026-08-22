@@ -8,6 +8,15 @@ sans les complications d'un MCTS a information imparfaite (ISMCTS). C'est une
 approximation raisonnable pour une premiere version: en pratique un joueur
 humain ne connait pas l'ordre des cartes a venir, donc ce bot est legerement
 "omniscient" sur ce point precis.
+
+Evaluation des feuilles: par defaut, simulation aleatoire (ou selon
+`rollout_policy`) jusqu'a la fin de la partie -- couteux, mais precis. En
+passant un `value_fn(state, player_idx) -> float` (typiquement
+`agricola2p.rl.value_net.ValueNet` entraine par self-play, cf
+agricola2p/rl/), les noeuds non-terminaux sont evalues directement (une
+prediction, pas de simulation) au lieu d'etre simules jusqu'au bout: c'est le
+principe "bootstrap" a la AlphaZero, qui permet beaucoup plus d'iterations
+dans le meme temps, au prix de la precision du reseau appris.
 """
 
 from __future__ import annotations
@@ -49,12 +58,14 @@ class MCTSBot(Bot):
         rollout_policy: Bot | None = None,
         seed: int | None = None,
         max_rollout_moves: int = 400,
+        value_fn=None,
     ):
         self.iterations = iterations
         self.c = exploration
         self.rng = random.Random(seed)
         self.max_rollout_moves = max_rollout_moves
-        if rollout_policy is None:
+        self.value_fn = value_fn
+        if rollout_policy is None and value_fn is None:
             from .random_bot import RandomBot
 
             rollout_policy = RandomBot(seed=seed)
@@ -102,6 +113,12 @@ class MCTSBot(Bot):
         return child
 
     def _rollout(self, game: AgricolaGame, player_idx: int) -> float:
+        opponent_idx = 1 - player_idx
+
+        if self.value_fn is not None and not game.is_terminal():
+            # Bootstrap: evaluation directe du noeud, pas de simulation.
+            return float(self.value_fn(game.state, player_idx))
+
         sim = copy.deepcopy(game)
         moves = 0
         while not sim.is_terminal() and moves < self.max_rollout_moves:
@@ -110,7 +127,6 @@ class MCTSBot(Bot):
             sim.apply(action)
             moves += 1
         scores = sim.scores()
-        opponent_idx = 1 - player_idx
         return float(scores[player_idx] - scores[opponent_idx])
 
     def _backpropagate(self, node: "_Node", player_idx: int, value_for_root: float) -> None:
