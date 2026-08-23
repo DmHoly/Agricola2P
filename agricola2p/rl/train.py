@@ -4,9 +4,13 @@ Usage:
     # gen 1: self-play avec les bots existants (Heuristic/Random)
     python3 -m agricola2p.rl.train --games 3000 --epochs 60
 
-    # gen 2+: auto-jeu RLBot vs RLBot avec les poids actuels, reseau plus
-    # profond (2 couches cachees ici)
+    # gen 2 (echec, cf STRATEGY.md): auto-jeu RLBot vs RLBot brut -- glouton
+    # deterministe, pas de vraie exploration, degrade la performance.
     python3 -m agricola2p.rl.train --self-play rl --hidden 64 32 --games 3000 --epochs 80
+
+    # gen 2 (piste recommandee): auto-jeu via MCTS+reseau (vraie recherche
+    # en arbre = vraie exploration, cf make_mcts_self_play_pair)
+    python3 -m agricola2p.rl.train --self-play mcts_rl --mcts-iterations 60 --games 600 --epochs 60
 """
 
 from __future__ import annotations
@@ -17,11 +21,16 @@ import time
 
 import numpy as np
 
-from .self_play import collect_dataset, make_diverse_bot_pair, make_rl_self_play_pair
+from .self_play import (
+    collect_dataset,
+    make_diverse_bot_pair,
+    make_mcts_self_play_pair,
+    make_rl_self_play_pair,
+)
 from .value_net import DEFAULT_WEIGHTS_PATH, ValueNet
 
 
-def _bot_pair_factory(self_play: str, source_weights):
+def _bot_pair_factory(self_play: str, source_weights, mcts_iterations: int = 60):
     if self_play == "baseline":
         return make_diverse_bot_pair
     if self_play == "rl":
@@ -29,6 +38,12 @@ def _bot_pair_factory(self_play: str, source_weights):
         print(f"Self-play RL: reseau source charge depuis {source_weights} "
               f"(n_layers={net.n_layers}, hidden_dims={net.hidden_dims})")
         return functools.partial(make_rl_self_play_pair, net=net)
+    if self_play == "mcts_rl":
+        net = ValueNet.load(source_weights)
+        print(f"Self-play MCTS+RL: reseau source charge depuis {source_weights} "
+              f"(n_layers={net.n_layers}, hidden_dims={net.hidden_dims}), "
+              f"{mcts_iterations} iterations/coup")
+        return functools.partial(make_mcts_self_play_pair, net=net, iterations=mcts_iterations)
     raise ValueError(f"self_play inconnu: {self_play!r}")
 
 
@@ -43,8 +58,9 @@ def train(
     weights_path=DEFAULT_WEIGHTS_PATH,
     self_play: str = "baseline",
     source_weights=DEFAULT_WEIGHTS_PATH,
+    mcts_iterations: int = 60,
 ) -> ValueNet:
-    bot_pair_factory = _bot_pair_factory(self_play, source_weights)
+    bot_pair_factory = _bot_pair_factory(self_play, source_weights, mcts_iterations)
 
     print(f"Self-play ({self_play}): generation de {n_games} parties...")
     t0 = time.time()
@@ -96,12 +112,20 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
-        "--self-play", choices=["baseline", "rl"], default="baseline",
-        help="'baseline': Heuristic/Random. 'rl': auto-jeu RLBot vs RLBot avec --source-weights.",
+        "--self-play", choices=["baseline", "rl", "mcts_rl"], default="baseline",
+        help=(
+            "'baseline': Heuristic/Random. 'rl': auto-jeu RLBot vs RLBot brut "
+            "(deconseille, cf STRATEGY.md). 'mcts_rl': auto-jeu via MCTS+reseau "
+            "(vraie exploration par recherche en arbre)."
+        ),
     )
     parser.add_argument(
         "--source-weights", type=str, default=str(DEFAULT_WEIGHTS_PATH),
-        help="poids RLBot a utiliser pour generer les parties quand --self-play rl",
+        help="poids a utiliser pour generer les parties quand --self-play rl/mcts_rl",
+    )
+    parser.add_argument(
+        "--mcts-iterations", type=int, default=60,
+        help="iterations MCTS par coup pendant le self-play --self-play mcts_rl",
     )
     args = parser.parse_args()
     train(
@@ -113,6 +137,7 @@ def main() -> None:
         seed=args.seed,
         self_play=args.self_play,
         source_weights=args.source_weights,
+        mcts_iterations=args.mcts_iterations,
     )
 
 

@@ -99,6 +99,41 @@ def make_rl_self_play_pair(seed: int, epsilon: float, net, opponent_mix: float =
     )
 
 
+def make_mcts_self_play_pair(
+    seed: int,
+    epsilon: float,
+    net,
+    iterations: int = 60,
+    opponent_mix: float = 0.2,
+) -> tuple[Bot, Bot]:
+    """Auto-jeu via MCTS dont les feuilles sont evaluees par le reseau
+    courant (`net`, bootstrap -- pas de simulation jusqu'au bout, donc
+    rapide malgre la recherche en arbre, cf mcts_bot.MCTSBot(value_fn=...)).
+
+    Contrairement a `make_rl_self_play_pair` (RLBot brut, deterministe sauf
+    egalite stricte), MCTS explore reellement plusieurs branches a chaque
+    coup via UCB1 avant de choisir -- l'exploration vient de la recherche
+    elle-meme, pas seulement d'un epsilon applique par-dessus un glouton.
+    C'est cense donner des trajectoires de self-play moins etroites/moins
+    auto-referentielles (cf STRATEGY.md, section sur l'echec du self-play
+    RLBot vs RLBot brut).
+    """
+    from ..bots.mcts_bot import MCTSBot
+    from .mcts_value_fn import make_value_fn_from_net
+
+    rng = random.Random(seed)
+    value_fn = make_value_fn_from_net(net)
+    mcts0 = MCTSBot(iterations=iterations, seed=seed, value_fn=value_fn)
+    if rng.random() < opponent_mix:
+        base1 = HeuristicBot(seed=seed + 1) if rng.random() < 0.5 else RandomBot(seed=seed + 1)
+    else:
+        base1 = MCTSBot(iterations=iterations, seed=seed + 1, value_fn=value_fn)
+    return (
+        EpsilonGreedyWrapper(mcts0, epsilon, seed=seed * 2),
+        EpsilonGreedyWrapper(base1, epsilon, seed=seed * 2 + 1),
+    )
+
+
 def collect_dataset(
     n_games: int, seed0: int = 0, epsilon: float = 0.15, bot_pair_factory=make_diverse_bot_pair
 ) -> tuple[np.ndarray, np.ndarray]:
