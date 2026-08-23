@@ -236,6 +236,33 @@ qu'avec RLBot brut, ou constituer un "pool" d'adversaires (plusieurs
 generations passees, pas seulement le modele courant) pour eviter le
 sur-ajustement a sa propre politique.
 
+### Suite: self-play via mcts_rl — plus de collapse, mais pas encore une vraie victoire
+
+Piste suivie: generer les parties de self-play avec `mcts_rl`
+(`MCTSBot(value_fn=...)`, 60 iterations/coup) au lieu du RLBot brut
+deterministe — la recherche en arbre UCB1 explore reellement plusieurs
+branches a chaque coup, contrairement a un epsilon plaque sur un glouton.
+800 parties generees ainsi (~16 min), reseau reentraine (meme architecture
+1 couche que la generation 1, pour isoler l'effet de la source des donnees).
+
+**Resultat**: plus de collapse (bon signe — le diagnostic precedent tenait):
+`gen3` reste aussi dominant que `gen1` face a RandomBot (15-0) et
+HeuristicBot (15-0). Mais en tete-a-tete direct contre `gen1`, le resultat
+ne tranche pas franchement en sa faveur: 11-9 sur les 20 premieres seeds,
+16-24 sur 40 seeds supplementaires — **27-33 au total sur 60 parties**,
+soit une legere avance pour `gen1`, pas l'amelioration nette esperee.
+
+Interpretation: `gen3` n'a ete entraine que sur 800 parties de self-play
+(contre 3000 pour `gen1`) — un budget de donnees bien plus petit, ce qui
+peut suffire a expliquer la quasi-parite plutot qu'un vrai gain. La piste
+`mcts_rl` reste la bonne direction (elle resout le probleme de fond
+identifie precedemment), mais n'a pas encore ete testee au meme budget que
+la generation 1. `agricola2p/rl/weights.npz` livre dans le depot reste donc
+le modele de la 1ere generation — legerement le plus fort mesure a ce jour,
+tous essais confondus. Pour vraiment trancher: relancer
+`--self-play mcts_rl` avec ~3000 parties (budget comparable a `gen1`,
+attendre plusieurs dizaines de minutes) plutot que les 800 utilisees ici.
+
 ## Pour aller plus loin
 
 Ces observations viennent d'un seul appariement MCTS(250) vs MCTS(250) — un
