@@ -92,6 +92,60 @@ def test_rl_bot_missing_weights_raises(tmp_path):
         RLBot(weights_path=tmp_path / "does_not_exist.npz")
 
 
+def test_value_net_supports_multiple_hidden_layers():
+    net = ValueNet(input_dim=10, hidden_dim=(16, 8, 4), seed=0)
+    assert net.n_layers == 4  # 3 couches cachees + 1 couche de sortie
+    assert net.hidden_dims == (16, 8, 4)
+    X = np.random.default_rng(0).standard_normal((20, 10))
+    net.set_normalization(X)
+    y = np.random.default_rng(1).standard_normal(20)
+    first = net.train_step(X, y, lr=0.01)
+    for _ in range(20):
+        last = net.train_step(X, y, lr=0.01)
+    assert last < first
+
+
+def test_deep_value_net_save_load_round_trip(tmp_path):
+    net = ValueNet(input_dim=FEATURE_DIM, hidden_dim=(16, 8), seed=0)
+    X = np.zeros((5, FEATURE_DIM))
+    net.set_normalization(X + 1.0)
+    path = tmp_path / "deep_weights.npz"
+    net.save(path)
+    loaded = ValueNet.load(path)
+    assert loaded.hidden_dims == (16, 8)
+    sample = np.random.default_rng(0).standard_normal(FEATURE_DIM)
+    assert net.predict(sample) == pytest.approx(loaded.predict(sample))
+
+
+def test_rl_bot_accepts_preloaded_net():
+    from agricola2p.bots.rl_bot import RLBot
+
+    net = ValueNet(input_dim=FEATURE_DIM, hidden_dim=4, seed=0)
+    X, y = collect_dataset(n_games=1, seed0=40)
+    net.set_normalization(X)
+
+    bot = RLBot(net=net, seed=1)
+    assert bot.net is net  # pas de rechargement depuis le disque
+    game = AgricolaGame.new_game(seed=7)
+    action = bot.choose_action(game, 0)
+    assert action in game.legal_actions()
+
+
+def test_rl_self_play_pair_uses_shared_net():
+    import functools
+
+    from agricola2p.rl.self_play import make_rl_self_play_pair
+
+    net = ValueNet(input_dim=FEATURE_DIM, hidden_dim=4, seed=0)
+    X, y = collect_dataset(n_games=1, seed0=41)
+    net.set_normalization(X)
+
+    factory = functools.partial(make_rl_self_play_pair, net=net, opponent_mix=0.0)
+    X2, y2 = collect_dataset(n_games=2, seed0=50, bot_pair_factory=factory)
+    assert X2.shape[1] == FEATURE_DIM
+    assert X2.shape[0] > 0
+
+
 def test_mcts_bot_with_value_fn_bootstrap_no_rollout_policy():
     from agricola2p.bots.mcts_bot import MCTSBot
 

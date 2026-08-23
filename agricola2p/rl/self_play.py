@@ -74,12 +74,43 @@ def make_diverse_bot_pair(seed: int, epsilon: float = 0.15) -> tuple[Bot, Bot]:
     )
 
 
-def collect_dataset(n_games: int, seed0: int = 0, epsilon: float = 0.15) -> tuple[np.ndarray, np.ndarray]:
+def make_rl_self_play_pair(seed: int, epsilon: float, net, opponent_mix: float = 0.25) -> tuple[Bot, Bot]:
+    """Auto-jeu RLBot vs RLBot avec les poids courants (`net`, partage entre
+    les 2 joueurs pour eviter de relire le fichier a chaque partie).
+
+    Une fraction `opponent_mix` des parties oppose le RLBot courant a un
+    sparring-partner fixe (Heuristic/Random) plutot qu'a lui-meme: le
+    self-play pur tend a converger vers une strategie etroite que seul
+    RLBot-contre-lui-meme sait "battre", et qui peut s'averer fragile face a
+    un style de jeu different -- garder un peu de diversite d'adversaires
+    limite ce risque de sur-specialisation.
+    """
+    from ..bots.rl_bot import RLBot
+
+    rng = random.Random(seed)
+    rl0 = RLBot(net=net, seed=seed)
+    if rng.random() < opponent_mix:
+        base1 = HeuristicBot(seed=seed + 1) if rng.random() < 0.5 else RandomBot(seed=seed + 1)
+    else:
+        base1 = RLBot(net=net, seed=seed + 1)
+    return (
+        EpsilonGreedyWrapper(rl0, epsilon, seed=seed * 2),
+        EpsilonGreedyWrapper(base1, epsilon, seed=seed * 2 + 1),
+    )
+
+
+def collect_dataset(
+    n_games: int, seed0: int = 0, epsilon: float = 0.15, bot_pair_factory=make_diverse_bot_pair
+) -> tuple[np.ndarray, np.ndarray]:
+    """`bot_pair_factory(seed, epsilon) -> (bot0, bot1)`. Par defaut,
+    melange Heuristic/Random (cf make_diverse_bot_pair); passer par exemple
+    `functools.partial(make_rl_self_play_pair, net=mon_reseau)` pour du
+    self-play RLBot vs RLBot avec un reseau deja charge."""
     X: list[np.ndarray] = []
     y: list[float] = []
     for i in range(n_games):
         seed = seed0 + i
-        bot0, bot1 = make_diverse_bot_pair(seed, epsilon=epsilon)
+        bot0, bot1 = bot_pair_factory(seed, epsilon)
         for feats, target in play_episode(bot0, bot1, seed=seed):
             X.append(feats)
             y.append(target)

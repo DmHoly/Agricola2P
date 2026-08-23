@@ -21,7 +21,11 @@ from .base import Bot
 class RLBot(Bot):
     name = "rl"
 
-    def __init__(self, weights_path=None, seed: int | None = None):
+    def __init__(self, weights_path=None, seed: int | None = None, net=None):
+        """`net`: instance ValueNet deja chargee, a reutiliser telle quelle
+        (evite de relire le fichier de poids a chaque partie -- utile pour
+        generer des milliers de parties de self-play). Prioritaire sur
+        `weights_path` si fourni."""
         try:
             from ..rl.features import encode
             from ..rl.value_net import DEFAULT_WEIGHTS_PATH, ValueNet
@@ -31,14 +35,17 @@ class RLBot(Bot):
                 "'rl': pip install -e '.[rl]')."
             ) from exc
 
-        path = Path(weights_path) if weights_path else DEFAULT_WEIGHTS_PATH
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Aucun poids entraine trouve ({path}). Lance d'abord: "
-                "python3 -m agricola2p.rl.train"
-            )
         self._encode = encode
-        self.net = ValueNet.load(path)
+        if net is not None:
+            self.net = net
+        else:
+            path = Path(weights_path) if weights_path else DEFAULT_WEIGHTS_PATH
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"Aucun poids entraine trouve ({path}). Lance d'abord: "
+                    "python3 -m agricola2p.rl.train"
+                )
+            self.net = ValueNet.load(path)
         self.rng = random.Random(seed)
 
     def choose_action(self, game: AgricolaGame, player_idx: int) -> Action:
