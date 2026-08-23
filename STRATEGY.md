@@ -191,6 +191,51 @@ heuristiques de reproduction (section precedente), en plus marque: la valeur
 d'un etat depend de ce qu'il permettra de faire dans les manches suivantes,
 pas seulement de ce qu'il vaut a l'instant T.
 
+### Tentative de generation 2 (reseau plus profond, self-play RLBot vs RLBot) — echec instructif
+
+`agricola2p/rl/` supporte maintenant des reseaux a plusieurs couches cachees
+(`ValueNet(hidden_dim=(64, 32), ...)`) et un mode d'auto-jeu ou RLBot
+s'affronte lui-meme pour generer les donnees d'entrainement
+(`train.py --self-play rl`, cf `self_play.make_rl_self_play_pair`: 75% des
+parties opposent 2 copies du RLBot courant partageant le meme reseau, 25%
+l'opposent a un Heuristic/Random comme partenaire d'entrainement fixe, plus
+15% de coups aleatoires pour diversifier).
+
+**Resultat mesure**: un reseau entraine sur 3000 parties de self-play RLBot
+vs RLBot (profond, 2 couches 64+32) **perd 0-20** contre le modele
+precedent (1 couche, entraine sur des parties Heuristic/Random). Pour
+isoler la cause, un 2e run a profondeur EGALE (1 couche, memes
+hyperparametres, seule la source des parties change) a ete teste: memes
+resultats desastreux (**0-15**, et seulement 10-0 contre RandomBot au lieu
+de 20-0 pour la generation precedente). La profondeur du reseau n'y est
+donc pour rien: **c'est la donnee de self-play elle-meme qui est en cause**,
+pas l'architecture.
+
+Diagnostic le plus probable: un RLBot est un glouton **deterministe** (il
+ne randomise qu'en cas d'egalite stricte) — faire jouer 2 copies du meme
+reseau l'une contre l'autre produit des parties bien plus repetitives et
+etroites que le melange Heuristic/Random original (qui inclut un vrai style
+aleatoire et un vrai style base sur une formule figee, deux sources de
+diversite tres differentes). Le reseau apprend alors a bien predire l'issue
+de SA PROPRE politique imparfaite plutot que d'ancrer ses estimations sur
+des parties variees — un biais d'auto-reference classique en self-play
+naif, faute des mecanismes d'exploration qu'utilise un vrai AlphaZero
+(recherche en arbre MCTS a la selection, bruit de Dirichlet a la racine,
+echantillonnage par temperature sur les visites — bien plus riches qu'un
+epsilon fixe sur un glouton deterministe).
+
+**Consequence pratique**: `agricola2p/rl/weights.npz` livre dans le depot
+reste le modele de la 1ere generation (1 couche, self-play Heuristic/Random)
+— nettement plus fort en pratique malgre son architecture plus simple. Le
+code du self-play RLBot vs RLBot et des reseaux profonds reste disponible
+(`--self-play rl`, `--hidden 64 32`) pour qui veut experimenter, mais n'est
+pas ce qui est utilise par defaut. Pistes pour qu'une generation 2 batte
+reellement la generation 1: generer les parties de self-play avec `mcts_rl`
+(recherche en arbre, donc bien plus d'exploration qu'un glouton pur) plutot
+qu'avec RLBot brut, ou constituer un "pool" d'adversaires (plusieurs
+generations passees, pas seulement le modele courant) pour eviter le
+sur-ajustement a sa propre politique.
+
 ## Pour aller plus loin
 
 Ces observations viennent d'un seul appariement MCTS(250) vs MCTS(250) — un
